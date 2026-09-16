@@ -32,7 +32,15 @@ export function responseInterceptor(res: any): boolean {
 }
 
 // token 失效统一处理：清缓存 + 回登录页（App.uvue onShow 守卫兜底）
+// reLaunch 节流：并发失效时 N 个请求会先后走到这，1.5s 窗口内只放行一次跳转，
+// 否则登录页被连续 reLaunch 多次闪屏（冷启动入口页无 token 批量请求曾 3s 内连跳 8 次）
+let lastRedirectAt = 0
 function redirectToLogin() {
+    const now = Date.now()
+    if (now - lastRedirectAt < 1500) {
+        return
+    }
+    lastRedirectAt = now
     uni.removeStorageSync(TOKEY_KEY)
     uni.removeStorageSync(REFRESH_TOKEN_KEY)
     uni.removeStorageSync('user:is_login')

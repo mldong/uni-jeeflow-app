@@ -120,6 +120,7 @@
 	import { dictGetByDictType } from '@/api/dict.uts'
 	import { refreshTabBadges } from '@/util/badge.uts'
 	import { resolveWfIcon } from '@/util/wf_icon_map.uts'
+	import { IS_LOGIN_KEY } from '@/util/const.uts'
 
 	export default {
 		data() {
@@ -149,6 +150,11 @@
 			}
 		},
 		onShow() {
+			// 未登录一个请求都不发：本页是冷启动入口页，无 token 的批量业务请求每个都会
+			// 99990403→redirectToLogin，登录页被连跳多次（曾 3s 内 8 次）；跳转由 App.onShow 守卫统一做
+			if (uni.getStorageSync(IS_LOGIN_KEY) != true) {
+				return
+			}
 			refreshTabBadges()
 			this.loadWorkbenchCounts()
 			// 快捷发起只在首次加载/上次失败未恢复时拉取（失败时 quickGroups 已清空），

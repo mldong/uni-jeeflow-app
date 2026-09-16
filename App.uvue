@@ -14,6 +14,11 @@
 		}
 		const delta = Math.abs(magnitude - (shakeLastMagnitude as number))
 		shakeLastMagnitude = magnitude
+		// 诊断日志：只在幅值有变化时打（蓝叠虚拟加速度计恒定 9.81/0.23/1.71 且晃动按钮不驱动它，
+		// 静止时打了也是刷屏；真机摇一摇灵敏度按这里的 delta 调阈值 1.35）
+		if (delta > 0.5) {
+			console.log('[shake] delta=' + delta.toFixed(3) + ' mag=' + magnitude.toFixed(3))
+		}
 		const now = Date.now()
 		if (delta > 1.35 && now - shakeLastTime > 1200) {
 			shakeLastTime = now
@@ -25,12 +30,18 @@
 		onLaunch: function () {
 			console.log('App Launch')
 			// #ifdef APP
-			// 开发环境全局摇一摇弹接口切换（模拟器无加速度计，走登录页长按 logo；production 编译期 IS_DEV=false 不注册）
+			// 开发环境全局摇一摇弹接口切换（模拟器无真实摇晃，走登录页长按 logo；production 编译期 IS_DEV=false 不注册）
 			if (IS_DEV) {
-				uni.onAccelerometerChange(shakeListener)
 				uni.startAccelerometer({
-					interval: 'game'
+					interval: 'game',
+					success: () => {
+						console.log('[shake] startAccelerometer ok')
+					},
+					fail: (err) => {
+						console.log('[shake] startAccelerometer fail: ' + (err.errMsg != null ? err.errMsg : ''))
+					}
 				})
+				uni.onAccelerometerChange(shakeListener)
 			}
 			// #endif
 		},
