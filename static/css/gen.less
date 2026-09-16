@@ -1,0 +1,79 @@
+.generate-rpx(@n, @i: 1,@prop,@prefix) when (@i =< @n) {
+  .@{prefix}-@{i} { @{prop}: (@i * 1rpx); }
+  .generate-rpx(@n, (@i + 1),@prop,@prefix);
+}
+.generate-px(@n, @i: 1,@prop,@prefix) when (@i =< @n) {
+  .@{prefix}-@{i} { @{prop}: (@i * 1px); }
+  .generate-px(@n, (@i + 1),@prop,@prefix);
+}
+.generate-value(@n, @i: 1,@prop,@prefix) when (@i =< @n) {
+  .@{prefix}-@{i} { @{prop}: (@i * 1); }
+  .generate-value(@n, (@i + 1),@prop,@prefix);
+}
+.generate-percentage(@n, @i: 1,@prop,@prefix) when (@i =< @n) {
+  .@{prefix}-@{i} { @{prop}: (@i * 1%); }
+  .generate-percentage(@n, (@i + 1),@prop,@prefix);
+}
+// 构造width
+.generate-rpx(750,1,width,w);
+// 构造heignt
+.generate-rpx(750,0,height,h);
+// 构造border-left
+.generate-rpx(200,1,border-left,bl);
+// 构造border-right
+.generate-rpx(200,1,border-right,br);
+// 构造border-top
+.generate-rpx(200,1,border-top,bt);
+// 构造border-bottom
+.generate-rpx(200,1,border-bottom,bb);
+// 构造padding-left
+.generate-rpx(200,1,padding-left,pl);
+// 构造padding-right
+.generate-rpx(200,1,padding-right,pr);
+// 构造padding-top
+.generate-rpx(200,1,padding-top,pt);
+// 构造padding-bottom
+.generate-rpx(200,1,padding-bottom,pb);
+// 构造margin-left
+.generate-rpx(200,1,margin-left,ml);
+// 构造margin-right
+.generate-rpx(200,1,margin-right,mr);
+// 构造margin-top
+.generate-rpx(200,1,margin-top,mt);
+// 构造margin-bottom
+.generate-rpx(200,1,margin-bottom,mb);
+// 构造font-size
+.generate-rpx(64,1,font-size,fs);
+// 构造border-radius
+.generate-rpx(200,1,border-radius,bra);
+// 构造flex
+.generate-value(24,1,flex,flex);
+// 构造left
+.generate-rpx(300,0,left,left);
+// 构造top
+.generate-rpx(300,0,top,top);
+// 构造right
+.generate-rpx(300,0,right,right);
+// 构造bottom
+.generate-rpx(300,0,bottom,bottom);
+// 构造padding
+.generate-rpx(300,0,padding,padding);
+// 构造margin
+.generate-rpx(300,0,margin,margin);
+// 宽度百分比
+.generate-percentage(100,1,width,wp);
+// 高度百分比
+.generate-percentage(100,1,height,hp);
+
+// 构造width
+.generate-px(300,1,width,wpx);
+// 构造heignt
+.generate-px(300,0,height,hpx);
+// 构造border-radius
+.generate-px(200,1,border-radius,brapx);
+
+.generate-opacity(@n, @i: 1,@prop,@prefix) when (@i =< @n) {
+  .@{prefix}-@{i} { @{prop}: (@i * 0.1); }
+  .generate-opacity(@n, (@i + 1),@prop,@prefix);
+}
+.generate-opacity(10,1,opacity,opacity);

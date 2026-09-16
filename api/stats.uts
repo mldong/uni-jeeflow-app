@@ -1,0 +1,22 @@
+import { http, HttpConfig } from '@/util/http.uts'
+import { WF_FACADE_PREFIX } from '@/util/const.uts'
+
+// ── 工作流统计 ─────────────────────────────────────────────────────────────
+// 总览（待办/已办/驳回/撤回/平均耗时/逾期率…）
+export const statsOverview = (param: UTSJSONObject): Promise<any> => {
+	return http.post(WF_FACADE_PREFIX + "processInstance/stats/overview", {
+		data: param
+	} as HttpConfig)
+}
+// 趋势（按 granularity: hour/day/week/month 分桶）
+export const statsTrend = (param: UTSJSONObject): Promise<any> => {
+	return http.post(WF_FACADE_PREFIX + "processInstance/stats/trend", {
+		data: param
+	} as HttpConfig)
+}
+// 分组统计（dimension: applicant/approver/category/define/state/stuckNode/stuckApprover…）
+export const statsGroup = (param: UTSJSONObject): Promise<any> => {
+	return http.post(WF_FACADE_PREFIX + "processInstance/stats/group", {
+		data: param
+	} as HttpConfig)
+}

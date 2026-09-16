@@ -1,0 +1,211 @@
+<template>
+	<m-navigation-bar :showBack="false">
+		<template #title>
+			<text class="m-nav-title">我的</text>
+		</template>
+	</m-navigation-bar>
+	<!-- #ifdef APP -->
+	<scroll-view style="flex:1;background-color: #F5F6FA;">
+	<!-- #endif -->
+		<view class="m-info row h-192 align-items-flex-center bg-white">
+			<view class="m-avatar w-160 h-160 ml-20 bra-80">
+				<image v-if="$strUtil.isEmpty(userData?.getString('avatar'))" class="w-160 h-160" mode="aspectFit" :lazy-load="true" src="/static/images/header.png"></image>
+				<image v-else class="w-160 h-160" mode="aspectFit" :lazy-load="true" :src="$strUtil.toStr(userData?.getString('avatar'))"></image>
+			</view>
+			<view class="ml-20">
+				<view class="m-account">
+					<text>{{displayName}}</text>
+				</view>
+				<view class="m-role mt-8">
+					<text style="color:#C8C8C8">{{userData?.getString("userName")}}</text>
+				</view>
+			</view>
+		</view>
+		<m-list-title @itemTap="onItemTap" :dataSource="menuItems"></m-list-title>
+	<!-- #ifdef APP -->
+	</scroll-view>
+	<!-- #endif -->
+</template>
+
+<script lang="uts">
+	import { ListTitleType, mListTitle } from '@/components/m-list-title'
+	import { logout, userinfo } from '@/api/user.uts'
+	import { cleanCache } from '@/util/cache_util.uts';
+	import { SELECT_URL_KEY, SELECT_URL_LABEL, SELECT_URL_VALUE, IS_DEV } from '@/util/const.uts';
+	export default {
+		components: {
+			mListTitle
+		},
+		data() {
+			return {
+				listTitleData: [{
+					key: "message",
+					icon: 'chatboxes',
+					title: '消息',
+					iconColor: '#3B82F6'
+				},{
+					key: "password",
+					icon: 'locked',
+					title: '修改密码',
+					iconColor: '#F59E0B'
+				},{
+					key: "surrogate",
+					icon: 'staff',
+					title: '委托代理',
+					iconColor: '#8B5CF6'
+				},{
+					key: "baseurl",
+					icon: 'link',
+					title: '切换接口地址',
+					iconColor: '#2563EB'
+				},{
+					key: "about",
+					icon: 'info',
+					title: '关于',
+					iconColor: '#16A34A'
+				},{
+					key: "logout",
+					icon: 'undo',
+					title: '退出登录',
+					iconColor: 'red'
+				}] as ListTitleType[]
+			};
+		},
+		computed: {
+			userData: (): UTSJSONObject => {
+				return this.$store.getUser();
+			},
+			// production 正式包不出「切换接口地址」（锁定 pro），development 保留十三栈档位
+			menuItems: (): ListTitleType[] => {
+				if (IS_DEV) {
+					return this.listTitleData
+				}
+				return this.listTitleData.filter((item: ListTitleType): boolean => item.key != 'baseurl')
+			},
+			displayName: (): string => {
+				const user = this.$store.getUser()
+				const realName = user.getString('realName')
+				if (realName != null && realName.length > 0) {
+					return realName
+				}
+				const userName = user.getString('userName')
+				if (userName != null && userName.length > 0) {
+					return userName
+				}
+				return '未登录'
+			}
+		},
+		onShow() {
+			this.loadUserInfo()
+		},
+		methods: {
+			async loadUserInfo() {
+				try {
+					const res = await userinfo()
+					if (this.$responseInterceptor(res)) {
+						const data = res as UTSJSONObject
+						this.$store.setUser(data)
+					}
+				} catch (err) {
+					console.error(err)
+				}
+			},
+			onChangeApiUrl() {
+				uni.showActionSheet({
+					title: '切换接口地址',
+					itemList: SELECT_URL_LABEL,
+					success: (e: ShowActionSheetSuccess) => {
+						let tapIndex = 0;
+						if (e.tapIndex != null) {
+							tapIndex = parseInt(e.tapIndex.toString())
+						}
+						if (tapIndex < SELECT_URL_LABEL.length - 1) {
+							uni.setStorageSync(SELECT_URL_KEY, SELECT_URL_VALUE[tapIndex])
+							cleanCache()
+							uni.reLaunch({
+								url: '/pages/login/login'
+							})
+						} else {
+							uni.showModal({
+								title: '请输入接口地址',
+								editable: true,
+								placeholderText: "http://<局域网IP>:<端口>",
+								success: (res: ShowModalSuccess) => {
+									if (res.confirm) {
+										const content = res.content ?? ''
+										if (content.length == 0 || (!content.startsWith("http://") && !content.startsWith("https://"))) {
+											uni.showToast({
+												title: '请输入合法的接口地址',
+												icon: "error"
+											})
+											return;
+										}
+										uni.setStorageSync(SELECT_URL_KEY, content)
+										cleanCache()
+										uni.reLaunch({
+											url: '/pages/login/login'
+										})
+									}
+								}
+							})
+						}
+					}
+				})
+			},
+			onAbout() {
+				uni.showModal({
+					title: '关于',
+					content: 'jeeflow 移动审批\njeeflow 工作流系列管理系统移动端\n现联调：pro 线上 jeeflow-pro.mldong.com\n演示账号 admin / 123456',
+					showCancel: false
+				})
+			},
+			doLogout() {
+				cleanCache();
+				this.$store.resetAuth()
+				uni.reLaunch({
+					url: '/pages/login/login'
+				})
+			},
+			onLogout() {
+				uni.showModal({
+					title: '退出登录',
+					content: '确定退出当前账号？',
+					success: (ee: ShowModalSuccess) => {
+						if (!ee.confirm) return
+						logout().then(() => {
+							this.doLogout()
+						}).catch(() => {
+							this.doLogout()
+						})
+					}
+				})
+			},
+			onItemTap(item: ListTitleType) {
+				if (item.key == 'message') {
+					uni.navigateTo({
+						url: '/pages/message/message'
+					})
+				} else if (item.key == 'password') {
+					uni.showToast({
+						title: 'M1 开放：修改密码',
+						position: 'bottom'
+					})
+				} else if (item.key == "surrogate") {
+					uni.navigateTo({
+						url: '/pages/personal/surrogate'
+					})
+				} else if (item.key == 'baseurl') {
+					this.onChangeApiUrl()
+				} else if (item.key == 'about') {
+					this.onAbout()
+				} else if (item.key == "logout") {
+					this.onLogout()
+				}
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+
+</style>

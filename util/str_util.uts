@@ -1,0 +1,79 @@
+/**
+ * 判断字符串是否为空
+ */
+export const isEmpty=(str: string | null): boolean =>{
+	if(str != null) {
+		return str.toString() == '';
+	}
+	return true;
+}
+/**
+ * 判断字符串是否不为空
+ */
+export const isNotEmpty=(str: string | null): boolean =>{
+	return !isEmpty(str);
+}
+/**
+ * 判断是否为url
+ */
+export const isUrl = (str: string | null):boolean =>{
+	if(str != null) {
+		return str.startsWith("http://") || str.startsWith("https://");
+	}
+	return false;
+}
+/**
+ * 获取字符串长度
+ */
+export const length=(str: string | null): number =>{
+	return toStr(str).length
+}
+/**
+ * 字符串转字符串，除去非null
+ */
+export const toStr = (str: string | null): string =>{
+	if(str!=null) {
+		return str.toString()
+	}
+	return '';
+}
+/**
+ * 转成字符串
+ */
+export const anyToStr = (obj: any | null) : string =>{
+	if(obj == null){
+		return ''
+	}
+	return obj.toString()
+}
+/**
+ * 转成url字符串
+ */
+export const toUrlStr = (obj: UTSJSONObject):string=>{
+	let res = ''
+	obj.toMap().forEach((value,key)=>{
+		res=`${res}${key}=${value}&`
+	})
+	if(isNotEmpty(res)){
+		res = res.substring(0,res.length-1)
+	}
+	return res
+}
+type StrUtilType = {
+	isEmpty: (str: string | null) => boolean;
+	isNotEmpty: (str: string | null) => boolean;
+	toStr:(str: string | null) => string;
+	isUrl:(str: string | null) => boolean;
+	length:(str: string | null) => number;
+	anyToStr:(obj: any | null) => string;
+	toUrlStr:(obj: UTSJSONObject) => string;
+}
+export const $strUtil: StrUtilType = {
+	isEmpty,
+	isNotEmpty,
+	toStr,
+	isUrl,
+	length,
+	anyToStr,
+	toUrlStr
+}

@@ -1,0 +1,96 @@
+// 全局状态：reactive + setter 写穿 storage（照搬 uni-bill-app 模式）
+// 页面通过 globalProperties 的 $store 访问（main.uts 注册）
+import {
+	getToken as _getToken,
+	setToken as _setToken,
+	getUserInfo,
+	setUserInfo,
+	setUnreadMsgCount as _setUnreadMsg,
+	setUnreadTodoCount as _setUnreadTodo,
+	getUnreadMsgCount as _getUnreadMsg,
+	getUnreadTodoCount as _getUnreadTodo
+} from "@/util/cache_util";
+import { IS_LOGIN_KEY } from "@/util/const";
+
+export type State = {
+	isLogin: boolean; // 是否登录
+	user: UTSJSONObject; // 用户信息
+	unreadMsg: number; // 未读消息数（tab 角标）
+	unreadTodo: number; // 待办任务数（tab 角标）
+}
+
+export const state = reactive({
+	isLogin: uni.getStorageSync(IS_LOGIN_KEY) == true,
+	user: getUserInfo(),
+	unreadMsg: _getUnreadMsg(),
+	unreadTodo: _getUnreadTodo(),
+} as State)
+
+export const setIsLogin = (isLogin: boolean): void => {
+	uni.setStorageSync(IS_LOGIN_KEY, isLogin)
+	state.isLogin = isLogin
+}
+export const getIsLogin = (): boolean => {
+	return state.isLogin;
+}
+export const getUser = (): UTSJSONObject => {
+	return state.user
+}
+export const setUser = (user: UTSJSONObject): void => {
+	state.user = user;
+	setUserInfo(user)
+}
+export const getToken = (): string => {
+	return _getToken()
+}
+export const setToken = (token: string | null): void => {
+	_setToken(token)
+}
+export const getUnreadMsg = (): number => {
+	return state.unreadMsg
+}
+export const setUnreadMsg = (count: number): void => {
+	state.unreadMsg = count
+	_setUnreadMsg(count)
+}
+export const getUnreadTodo = (): number => {
+	return state.unreadTodo
+}
+export const setUnreadTodo = (count: number): void => {
+	state.unreadTodo = count
+	_setUnreadTodo(count)
+}
+// 退出登录 / token 失效时重置内存态（reLaunch 不会重建 UTS 全局单例）
+export const resetAuth = (): void => {
+	state.isLogin = false
+	state.user = {} as UTSJSONObject
+	state.unreadMsg = 0
+	state.unreadTodo = 0
+}
+
+type StoreType = {
+	setIsLogin: (isLogin: boolean) => void;
+	getIsLogin: () => boolean;
+	getUser: () => UTSJSONObject;
+	setUser: (user: UTSJSONObject) => void;
+	getToken: () => string;
+	setToken: (token: string | null) => void;
+	getUnreadMsg: () => number;
+	setUnreadMsg: (count: number) => void;
+	getUnreadTodo: () => number;
+	setUnreadTodo: (count: number) => void;
+	resetAuth: () => void;
+}
+export const $store: StoreType = {
+	setIsLogin,
+	getIsLogin,
+	getUser,
+	setUser,
+	getToken,
+	setToken,
+	getUnreadMsg,
+	setUnreadMsg,
+	getUnreadTodo,
+	setUnreadTodo,
+	resetAuth
+}

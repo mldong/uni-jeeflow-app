@@ -1,0 +1,41 @@
+<template>
+	<view class="center mt-20">
+		<text class="m-empty-text">{{text}}</text>
+		<text class="m-empty-sub" v-if="subText != ''">{{subText}}</text>
+	</view>
+</template>
+
+<script>
+	export default {
+		name:"m-empty-data",
+		props: {
+			// 主文案，默认「暂无数据」保持旧行为
+			text: {
+				type: String,
+				default: '暂无数据'
+			},
+			// 可选引导副文案（如消息中心的「审批与抄送通知会出现在这里」）
+			subText: {
+				type: String,
+				default: ''
+			}
+		},
+		data() {
+			return {
+
+			};
+		}
+	}
+</script>
+
+<style lang="scss">
+.m-empty-text{
+	font-size: 28rpx;
+	color: #999999;
+}
+.m-empty-sub{
+	margin-top: 12rpx;
+	font-size: 24rpx;
+	color: #BBBBBB;
+}
+</style>

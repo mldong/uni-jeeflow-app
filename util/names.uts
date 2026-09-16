@@ -1,0 +1,38 @@
+/**
+ * 名称映射工具：流程 name→displayName
+ * 供委托代理（流程名）等展示场景复用。
+ *
+ * 注意：用户姓名不走本工具——列表「申请人」读引擎存的 instanceExt.u_realName
+ * （对齐 vben 发起人列），不另建 userId→姓名 映射层。
+ */
+import { processDesignListByType } from '@/api/workflow.uts'
+
+/**
+ * 拉取流程 name→displayName 映射（listByType 展平 items）。
+ * 失败返回空对象（调用方回落显示原始 name）。
+ */
+export function loadFlowNames(): Promise<UTSJSONObject> {
+	return new Promise<UTSJSONObject>((resolve, _reject) => {
+		processDesignListByType().then((res) => {
+			const map = {} as UTSJSONObject
+			const groups = res as Array<UTSJSONObject>
+			for (let g = 0; g < groups.length; g++) {
+				const items = groups[g].getArray('items')
+				if (items == null) {
+					continue
+				}
+				for (let i = 0; i < items.length; i++) {
+					const it = items[i] as UTSJSONObject
+					const name = it.getString('name') ?? ''
+					const disp = it.getString('displayName') ?? ''
+					if (name.length > 0 && disp.length > 0) {
+						map[name] = disp
+					}
+				}
+			}
+			resolve(map)
+		}).catch((_e) => {
+			resolve({} as UTSJSONObject)
+		})
+	})
+}

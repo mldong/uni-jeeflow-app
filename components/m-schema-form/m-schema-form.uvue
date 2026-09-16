@@ -1,0 +1,456 @@
+<template>
+	<view class="m-schema-form">
+		<view class="m-form-row" v-for="(field, index) in mFields" :key="field.field">
+			<!-- 只读展示（查看模式 / 字段级只读）：label + 值文本 -->
+			<view class="m-form-row-inner m-form-row-inner--readonly" v-if="readonly || field.readonly">
+				<view class="m-form-label">
+					<text class="m-form-label-text">{{field.label}}</text>
+					<text class="m-form-required" v-if="field.required && !readonly">*</text>
+				</view>
+				<view class="m-form-control">
+					<text class="m-form-value-text">{{displayText(field)}}</text>
+				</view>
+			</view>
+			<!-- 可编辑控件 -->
+			<view class="m-form-row-inner" v-else>
+				<view class="m-form-label">
+					<text class="m-form-label-text">{{field.label}}</text>
+					<text class="m-form-required" v-if="field.required">*</text>
+				</view>
+				<view class="m-form-control">
+					<!-- 文本 / 数字 -->
+					<input v-if="field.type == 'input' || field.type == 'number'" class="m-form-input"
+						:type="field.type == 'number' ? 'number' : 'text'"
+						:value="formData.getString(field.field) ?? ''"
+						:placeholder="field.placeholder" placeholder-class="m-form-placeholder"
+						@input="onInput(field, $event)" />
+					<!-- 多行文本 -->
+					<textarea v-else-if="field.type == 'textarea'" class="m-form-textarea"
+						:value="formData.getString(field.field) ?? ''"
+						:placeholder="field.placeholder" placeholder-class="m-form-placeholder"
+						@input="onInput(field, $event)" />
+					<!-- 日期（点击弹 picker） -->
+					<view v-else-if="field.type == 'date'" class="m-form-picker" @tap="onOpenDate(field)">
+						<text :class="(formData.getString(field.field) ?? '') == '' ? 'm-form-placeholder' : 'm-form-value-text'">
+							{{(formData.getString(field.field) ?? '') == '' ? field.placeholder : (formData.getString(field.field) ?? '')}}
+						</text>
+						<m-icon type="calendar" :size="22" color="#999999"></m-icon>
+					</view>
+					<!-- 下拉（ActionSheet） -->
+					<view v-else-if="field.type == 'select'" class="m-form-picker" @tap="onOpenSelect(field)">
+						<text :class="(formData.getString(field.field) ?? '') == '' ? 'm-form-placeholder' : 'm-form-value-text'">
+							{{selectDisplayText(field)}}
+						</text>
+						<m-icon type="bottom" :size="20" color="#999999"></m-icon>
+					</view>
+					<!-- 单选组 -->
+					<radio-group v-else-if="field.type == 'radio'" class="m-form-option-group" @change="onRadioChange(field, $event)">
+						<view class="m-form-option" v-for="(o, oi) in field.options" :key="oi">
+							<radio :value="(o.getString('value') ?? '')" :checked="formData.getString(field.field) == (o.getString('value') ?? '')" color="#2563EB" style="transform:scale(0.8);" />
+							<text class="m-form-option-text">{{o.getString('label') ?? ''}}</text>
+						</view>
+					</radio-group>
+					<!-- 多选组 -->
+					<checkbox-group v-else-if="field.type == 'checkbox'" class="m-form-option-group" @change="onCheckboxChange(field, $event)">
+						<view class="m-form-option" v-for="(o, oi) in field.options" :key="oi">
+							<checkbox :value="(o.getString('value') ?? '')" color="#2563EB" style="transform:scale(0.8);" />
+							<text class="m-form-option-text">{{o.getString('label') ?? ''}}</text>
+						</view>
+					</checkbox-group>
+					<!-- 附件上传 -->
+					<view v-else-if="field.type == 'upload'" class="m-form-upload">
+						<view class="m-upload-btn" @tap="onChooseFile(field)">
+							<m-icon type="plusempty" :size="22" color="#2563EB"></m-icon>
+							<text class="m-upload-btn-text">选择文件</text>
+						</view>
+						<view class="m-upload-file" v-for="(f, fi) in uploadFiles(field)" :key="fi">
+							<m-icon type="paperclip" :size="18" color="#16A34A"></m-icon>
+							<text class="m-upload-file-name">{{f}}</text>
+						</view>
+					</view>
+					<!-- 未知类型：降级只读 -->
+					<view v-else>
+						<text class="m-form-value-text">{{displayText(field)}}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		<!-- 日期选择弹层（年月日） -->
+		<m-picker-year-month :showDay="true" :choosableFutureTime="true"
+			:value="datePickerValue" v-model:visible="datePickerVisible" @ok="onDateOk"></m-picker-year-month>
+	</view>
+</template>
+
+<script lang="uts">
+	import { SchemaField } from '@/util/form_schemas.uts'
+	import { uploadFile } from '@/api/file.uts'
+	import { dictGetByDictType } from '@/api/dict.uts'
+	import mPickerYearMonth from '@/components/m-picker-year-month/index.uvue'
+
+	// 字典选项会话级缓存（key=dictType）
+	const dictCache = new Map<string, UTSJSONObject[]>()
+
+	export default {
+		name: "m-schema-form",
+		components: {
+			mPickerYearMonth
+		},
+		props: {
+			fields: {
+				type: Array as PropType<SchemaField[]>,
+				default: [] as SchemaField[]
+			},
+			// 表单数据对象（组件内直接写值并 emit change，父页面持有同一引用）
+			formData: {
+				type: Object as PropType<UTSJSONObject>,
+				default: {} as UTSJSONObject
+			},
+			// 整表只读（任务详情查看模式）
+			readonly: {
+				type: Boolean,
+				default: false
+			}
+		},
+		emits: ['change', 'uploadSuccess'],
+		data() {
+			return {
+				datePickerVisible: false,
+				datePickerValue: '',
+				datePickerField: '',
+				uploadNames: {} as UTSJSONObject
+			};
+		},
+		computed: {
+			// v-for 直接迭代 props 数组 UTS 推断不了类型（error19），包一层显式类型 computed
+			mFields: (): SchemaField[] => {
+				return this.fields
+			}
+		},
+		watch: {
+			// start-form 异步 set schemaFields；created 时 fields 仍为空，需跟随 props 再拉字典
+			fields: {
+				handler(_n: SchemaField[], _o: SchemaField[]) {
+					this.loadDicts()
+				},
+				immediate: false
+			}
+		},
+		created() {
+			this.loadDicts()
+		},
+		methods: {
+			// dictType 字段：远程拉选项（getByDictType），会话级缓存
+			loadDicts() {
+				for (let i = 0; i < this.fields.length; i++) {
+					const field = this.fields[i]
+					if (field.dictType.length == 0) {
+						continue
+					}
+					const cached = dictCache.get(field.dictType)
+					if (cached != null) {
+						field.options = cached!
+						continue
+					}
+					const dictType = field.dictType
+					dictGetByDictType(dictType).then((res) => {
+						const rows = res as UTSJSONObject[]
+						if (rows != null && rows.length > 0) {
+							dictCache.set(dictType, rows)
+							field.options = rows
+						}
+					}).catch((_e) => {
+						// 字典异常保留静态兜底选项
+					})
+				}
+			},
+			// ── 展示辅助 ────────────────────────────────────────────────
+			displayText(field: SchemaField): string {
+				const v = this.formData.getString(field.field)
+				const n = this.formData.getNumber(field.field)
+				const current = v != null && v.length > 0 ? v : (n != null ? n.toString() : '')
+				if (current.length == 0) {
+					return '—'
+				}
+				// 下拉/单选/多选：映射选项文本
+				if (field.type == 'select' || field.type == 'radio' || field.type == 'checkbox') {
+					for (let i = 0; i < field.options.length; i++) {
+						const ov = field.options[i].get('value')
+						if (ov != null && ov.toString() == current) {
+							return field.options[i].getString('label') ?? current
+						}
+					}
+				}
+				return current
+			},
+			selectDisplayText(field: SchemaField): string {
+				const v = this.formData.getString(field.field)
+				const vn = this.formData.getNumber(field.field)
+				const current = v != null && v.length > 0 ? v : (vn != null ? vn.toString() : '')
+				if (current.length == 0) {
+					return field.placeholder
+				}
+				for (let i = 0; i < field.options.length; i++) {
+					if (this.optionValueStr(field.options[i]) == current) {
+						return field.options[i].getString('label') ?? current
+					}
+				}
+				return current
+			},
+			// 选项值可能是 int（dict dataType=2），统一转字符串比较
+			optionValueStr(o: UTSJSONObject): string {
+				const v = o.get('value')
+				if (v == null) {
+					return ''
+				}
+				return v.toString()
+			},
+			uploadFiles(field: SchemaField): string[] {
+				const arr = this.uploadNames.getString(field.field)
+				if (arr != null && arr.length > 0) {
+					return arr.split(',')
+				}
+				return [] as string[]
+			},
+			// ── 控件事件 ────────────────────────────────────────────────
+			setValue(field: SchemaField, value: any) {
+				this.formData[field.field] = value
+				this.$emit('change', this.formData)
+			},
+			// 模板内 $event 是 Any，参数收 any 后内部断言（error17）
+			onInput(field: SchemaField, event: any) {
+				const e = event as UniInputEvent
+				this.setValue(field, e.detail.value)
+			},
+			onRadioChange(field: SchemaField, event: any) {
+				const e = event as UniRadioGroupChangeEvent
+				this.setValue(field, e.detail.value)
+			},
+			onCheckboxChange(field: SchemaField, event: any) {
+				const e = event as UniCheckboxGroupChangeEvent
+				this.setValue(field, e.detail.value.join(','))
+			},
+			// ── 日期 ────────────────────────────────────────────────────
+			onOpenDate(field: SchemaField) {
+				this.datePickerField = field.field
+				const current = this.formData.getString(field.field) ?? ''
+				if (current.length > 0) {
+					this.datePickerValue = current
+				} else {
+					const d = new Date()
+					const m = d.getMonth() + 1
+					const day = d.getDate()
+					this.datePickerValue = d.getFullYear().toString() + '-' + (m <= 9 ? '0' + m : m.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
+				}
+				this.datePickerVisible = true
+			},
+			onDateOk(e: UTSJSONObject) {
+				this.datePickerVisible = false
+				const year = e.getNumber('year') ?? 0
+				const month = e.getNumber('month') ?? 1
+				const day = e.getNumber('day') ?? 1
+				const dateStr = year.toString() + '-' + (month <= 9 ? '0' + month : month.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
+				for (let i = 0; i < this.fields.length; i++) {
+					if (this.fields[i].field == this.datePickerField) {
+						this.setValue(this.fields[i], dateStr)
+						break
+					}
+				}
+			},
+			// ── 下拉（ActionSheet）─────────────────────────────────────
+			onOpenSelect(field: SchemaField) {
+				// 字典尚未回填时再拉一次（异步 fields / 网络慢兜底）
+				if (field.options.length == 0 && field.dictType.length > 0) {
+					const dictType = field.dictType
+					dictGetByDictType(dictType).then((res) => {
+						const rows = res as UTSJSONObject[]
+						if (rows != null && rows.length > 0) {
+							dictCache.set(dictType, rows)
+							field.options = rows
+							this.openSelectSheet(field)
+						} else {
+							uni.showToast({ title: '暂无选项', icon: 'none' })
+						}
+					}).catch((err) => {
+						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+					})
+					return
+				}
+				this.openSelectSheet(field)
+			},
+			openSelectSheet(field: SchemaField) {
+				const labels: string[] = []
+				for (let i = 0; i < field.options.length; i++) {
+					labels.push(field.options[i].getString('label') ?? '')
+				}
+				if (labels.length == 0) {
+					uni.showToast({ title: '暂无选项', icon: 'none' })
+					return
+				}
+				uni.showActionSheet({
+					title: field.label,
+					itemList: labels,
+					success: (res: ShowActionSheetSuccess) => {
+						if (res.tapIndex != null) {
+							const idx = parseInt(res.tapIndex.toString())
+							if (idx >= 0 && idx < field.options.length) {
+								const v = field.options[idx].get('value')
+								this.setValue(field, v ?? '')
+							}
+						}
+					}
+				})
+			},
+			// ── 附件上传 ────────────────────────────────────────────────
+			onChooseFile(field: SchemaField) {
+				uni.chooseImage({
+					count: 1,
+					success: (res) => {
+						const paths = res.tempFilePaths
+						if (paths == null || paths.length == 0) {
+							return
+						}
+						const path = paths[0]
+						uni.showLoading({
+							title: '上传中……',
+							mask: true
+						})
+						uploadFile(path).then((data) => {
+							uni.hideLoading()
+							const fileInfoId = data.getString('fileInfoId') ?? ''
+							const url = data.getString('url') ?? ''
+							if (fileInfoId.length > 0) {
+								// 记录文件名用于回显（取 url 最后一段）
+								let name = url
+								const idx = url.lastIndexOf('/')
+								if (idx >= 0 && idx < url.length - 1) {
+									name = url.substring(idx + 1)
+								}
+								const prev = this.uploadNames.getString(field.field) ?? ''
+								const names = prev.length > 0 ? prev + ',' + name : name
+								this.uploadNames[field.field] = names
+								// 契约：f_attachment 存 fileInfoId（逗号分隔多文件）
+								const prevIds = this.formData.getString(field.field) ?? ''
+								this.setValue(field, prevIds.length > 0 ? prevIds + ',' + fileInfoId : fileInfoId)
+								this.$emit('uploadSuccess', data)
+							}
+						}).catch((err) => {
+							uni.hideLoading()
+							uni.showToast({
+								title: this.$strUtil.anyToStr(err),
+								icon: 'none'
+							})
+						})
+					}
+				} as ChooseImageOptions)
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.m-schema-form{
+	.m-form-row{
+		border-bottom: 1rpx solid #F0F0F0;
+		.m-form-row-inner{
+			flex-direction: row;
+			align-items: flex-start;
+			padding: 20rpx 0;
+			.m-form-label{
+				width: 170rpx;
+				flex-direction: row;
+				padding-top: 20rpx;
+				.m-form-label-text{
+					font-size: 28rpx;
+					color: #333333;
+				}
+				.m-form-required{
+					color: #EF4444;
+					margin-left: 4rpx;
+					font-size: 28rpx;
+				}
+			}
+			.m-form-control{
+				flex: 1;
+				.m-form-input{
+					height: 72rpx;
+					font-size: 28rpx;
+					color: #333333;
+				}
+				.m-form-textarea{
+					height: 140rpx;
+					font-size: 28rpx;
+					color: #333333;
+				}
+				.m-form-picker{
+					flex-direction: row;
+					align-items: center;
+					justify-content: space-between;
+					height: 72rpx;
+				}
+				.m-form-value-text{
+					font-size: 28rpx;
+					color: #333333;
+					text-align: right;
+					lines: 0;
+				}
+				.m-form-placeholder{
+					font-size: 28rpx;
+					color: #BBBBBB;
+				}
+				.m-form-option-group{
+					flex-direction: row;
+					flex-wrap: wrap;
+					padding-top: 12rpx;
+					.m-form-option{
+						flex-direction: row;
+						align-items: center;
+						margin-right: 24rpx;
+						margin-bottom: 12rpx;
+						.m-form-option-text{
+							font-size: 26rpx;
+							color: #333333;
+						}
+					}
+				}
+				.m-form-upload{
+					.m-upload-btn{
+						flex-direction: row;
+						align-items: center;
+						justify-content: center;
+						width: 200rpx;
+						height: 72rpx;
+						border: 1rpx dashed #2563EB;
+						border-radius: 8rpx;
+						.m-upload-btn-text{
+							margin-left: 8rpx;
+							font-size: 24rpx;
+							color: #2563EB;
+						}
+					}
+					.m-upload-file{
+						flex-direction: row;
+						align-items: center;
+						margin-top: 12rpx;
+						.m-upload-file-name{
+							margin-left: 8rpx;
+							font-size: 24rpx;
+							color: #666666;
+						}
+					}
+				}
+			}
+		}
+		/* 只读行：label/值垂直居中（编辑态 label 的 padding-top 是为了对齐 72rpx 输入框） */
+		.m-form-row-inner--readonly{
+			align-items: center;
+			.m-form-label{
+				padding-top: 0;
+			}
+			.m-form-control{
+				align-items: flex-end;
+				justify-content: center;
+			}
+		}
+	}
+}
+</style>

@@ -1,0 +1,69 @@
+/**
+ * listByType.icon（Iconify ant-design:*）→ uni-icons type
+ * vben5 用 Iconify 渲染；App 走 m-icon/uni-icons，需映射。
+ */
+
+const ICON_MAP: Map<string, string> = (() => {
+	const m = new Map<string, string>()
+	m.set('ant-design:schedule-outlined', 'calendar')
+	m.set('ant-design:field-time-outlined', 'calendar')
+	m.set('ant-design:shopping-cart-outlined', 'cart')
+	m.set('ant-design:shop-outlined', 'shop')
+	m.set('ant-design:money-collect-outlined', 'wallet')
+	m.set('ant-design:account-book-outlined', 'wallet')
+	m.set('ant-design:account-book-filled', 'wallet')
+	m.set('ant-design:car-outlined', 'paperplane')
+	m.set('ant-design:team-outlined', 'person')
+	m.set('ant-design:file-text-outlined', 'compose')
+	m.set('ant-design:safety-certificate-outlined', 'auth')
+	m.set('ant-design:desktop-outlined', 'gear')
+	m.set('ant-design:swap-outlined', 'refreshempty')
+	m.set('ant-design:build-outlined', 'home')
+	m.set('ant-design:appstore-outlined', 'bars')
+	return m
+})()
+
+/** processDesign.type → uni-icons 兜底 */
+const TYPE_FALLBACK: Map<string, string> = (() => {
+	const m = new Map<string, string>()
+	m.set('1', 'calendar') // 假勤
+	m.set('2', 'person') // 人事
+	m.set('3', 'wallet') // 财务
+	m.set('4', 'auth') // 法务
+	m.set('5', 'home') // 行政
+	m.set('6', 'shop') // 业务
+	m.set('99', 'bars') // 其他
+	return m
+})()
+
+/**
+ * 解析远端 icon 为 uni-icons type。
+ * 顺序：精确映射 → 已是 uni 名（无 ':'）→ type 兜底 → compose
+ */
+export const resolveWfIcon = (apiIcon: string, typeHint: string): string => {
+	const raw = apiIcon.trim()
+	if (raw.length > 0) {
+		const hit = ICON_MAP.get(raw)
+		if (hit != null && hit!.length > 0) {
+			return hit!
+		}
+		// 无命名空间：可能已是 uni-icons / 本地 font_class
+		if (raw.indexOf(':') < 0) {
+			return raw
+		}
+		// ant-design:xxx-outlined → 试剥后缀再匹配（容错 filled/twotone）
+		const lower = raw.toLowerCase()
+		const mapped = ICON_MAP.get(lower)
+		if (mapped != null && mapped!.length > 0) {
+			return mapped!
+		}
+	}
+	const t = typeHint.trim()
+	if (t.length > 0) {
+		const fb = TYPE_FALLBACK.get(t)
+		if (fb != null && fb!.length > 0) {
+			return fb!
+		}
+	}
+	return 'compose'
+}

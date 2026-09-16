@@ -1,0 +1,134 @@
+<template>
+	<view class="m-mini-bars">
+		<view class="m-mini-bars-legend">
+			<view class="m-mini-bars-legend-item">
+				<view class="m-mini-bars-legend-dot" style="background-color: #2563EB;"></view>
+				<text class="m-mini-bars-legend-text">{{legendA}}</text>
+			</view>
+			<view class="m-mini-bars-legend-item">
+				<view class="m-mini-bars-legend-dot" style="background-color: #16A34A;"></view>
+				<text class="m-mini-bars-legend-text">{{legendB}}</text>
+			</view>
+		</view>
+		<view class="m-mini-bars-chart">
+			<view class="m-mini-bars-col" v-for="(item, index) in buckets" :key="index">
+				<view class="m-mini-bars-pair">
+					<view class="m-mini-bars-bar" :style="{
+						height: barHeight(item.getNumber('a') ?? 0) + 'rpx',
+						width: barWidth + 'rpx',
+						backgroundColor: '#2563EB'
+					}"></view>
+					<view class="m-mini-bars-bar" :style="{
+						height: barHeight(item.getNumber('b') ?? 0) + 'rpx',
+						width: barWidth + 'rpx',
+						backgroundColor: '#16A34A'
+					}"></view>
+				</view>
+				<text class="m-mini-bars-label" v-if="showLabel(index)">{{item.getString('label') ?? ''}}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		name: 'm-mini-bars',
+		props: {
+			buckets: {
+				type: Array as PropType<UTSJSONObject[]>,
+				default: (): UTSJSONObject[] => [] as UTSJSONObject[]
+			},
+			legendA: {
+				type: String,
+				default: '发起'
+			},
+			legendB: {
+				type: String,
+				default: '办结'
+			},
+			barWidth: {
+				type: Number,
+				default: 14
+			}
+		},
+		computed: {
+			maxVal(): number {
+				let m = 0
+				const arr = this.buckets
+				for (let i = 0; i < arr.length; i++) {
+					const a = arr[i].getNumber('a') ?? 0
+					const b = arr[i].getNumber('b') ?? 0
+					if (a > m) m = a
+					if (b > m) m = b
+				}
+				return m
+			}
+		},
+		methods: {
+			barHeight(v: number): number {
+				const max = this.maxVal
+				if (max <= 0) {
+					return 4
+				}
+				const h = Math.round(v * 160 / max)
+				return h < 4 && v > 0 ? 4 : h
+			},
+			showLabel(index: number): boolean {
+				const len = this.buckets.length
+				if (len <= 10) return true
+				// 桶多时每隔几个显示一个
+				const step = Math.ceil(len / 7)
+				return index % step == 0 || index == len - 1
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.m-mini-bars{
+	.m-mini-bars-legend{
+		flex-direction: row;
+		margin-bottom: 16rpx;
+		.m-mini-bars-legend-item{
+			flex-direction: row;
+			align-items: center;
+			margin-right: 24rpx;
+			.m-mini-bars-legend-dot{
+				width: 16rpx;
+				height: 16rpx;
+				border-radius: 4rpx;
+				margin-right: 8rpx;
+			}
+			.m-mini-bars-legend-text{
+				font-size: 22rpx;
+				color: #666666;
+			}
+		}
+	}
+	.m-mini-bars-chart{
+		flex-direction: row;
+		align-items: flex-end;
+		height: 200rpx;
+		.m-mini-bars-col{
+			flex: 1;
+			align-items: center;
+			.m-mini-bars-pair{
+				flex-direction: row;
+				align-items: flex-end;
+				height: 160rpx;
+				.m-mini-bars-bar{
+					width: 14rpx;
+					border-radius: 4rpx 4rpx 0 0;
+					margin: 0 2rpx;
+				}
+			}
+			.m-mini-bars-label{
+				margin-top: 8rpx;
+				font-size: 18rpx;
+				color: #999999;
+				lines: 1;
+			}
+		}
+	}
+}
+</style>

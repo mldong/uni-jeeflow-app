@@ -1,0 +1,720 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="false">
+			<template #title>
+				<text class="m-nav-title">工作台</text>
+			</template>
+		</m-navigation-bar>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered" @refresherrefresh="handleRefresherrefresh">
+		<!-- #endif -->
+			<!-- 一行摘要：替代顶部双大卡，减少与 Tab 角标重复 -->
+			<view class="m-summary">
+				<view class="m-summary-chip" @tap="goApproval(0)">
+					<text class="m-summary-chip-label">待办</text>
+					<text class="m-summary-chip-num" :class="unreadTodo > 0 ? 'm-summary-chip-num--hot' : ''">{{badgeText(unreadTodo)}}</text>
+				</view>
+				<view class="m-summary-dot"></view>
+				<view class="m-summary-chip" @tap="goMessage()">
+					<text class="m-summary-chip-label">消息</text>
+					<text class="m-summary-chip-num" :class="unreadMsg > 0 ? 'm-summary-chip-num--hot' : ''">{{badgeText(unreadMsg)}}</text>
+				</view>
+				<view class="m-summary-spacer"></view>
+				<view class="m-summary-link" @tap="goMyInstance()">
+					<text class="m-summary-link-text">我发起的</text>
+					<m-icon type="right" :size="16" color="#999999"></m-icon>
+				</view>
+				<view class="m-summary-link" @tap="goApproval(1)">
+					<text class="m-summary-link-text">已办</text>
+					<m-icon type="right" :size="16" color="#999999"></m-icon>
+				</view>
+			</view>
+
+			<!-- 工作台小指标：4 等分快捷入口 -->
+			<view class="m-indicators">
+				<view class="m-indicator-item" @tap="goMiniIndicator(0)">
+					<text class="m-indicator-num">{{workbenchCounts.getNumber('todo') ?? 0}}</text>
+					<text class="m-indicator-label">待办</text>
+				</view>
+				<view class="m-indicator-item" @tap="goMiniIndicator(1)">
+					<text class="m-indicator-num">{{workbenchCounts.getNumber('done') ?? 0}}</text>
+					<text class="m-indicator-label">已办</text>
+				</view>
+				<view class="m-indicator-item" @tap="goMiniIndicator(3)">
+					<text class="m-indicator-num">{{workbenchCounts.getNumber('myStart') ?? 0}}</text>
+					<text class="m-indicator-label">我发起</text>
+				</view>
+				<view class="m-indicator-item" @tap="goMiniIndicator(2)">
+					<text class="m-indicator-num">{{workbenchCounts.getNumber('cc') ?? 0}}</text>
+					<text class="m-indicator-label">抄送</text>
+				</view>
+			</view>
+
+			<!-- 快捷发起：按 type 分组，4 列紧凑宫格 -->
+			<view class="m-section">
+				<view class="m-section-title">
+					<text class="m-section-title-text">快捷发起</text>
+				</view>
+				<view v-if="menusLoading" class="m-skel-grid">
+					<view class="m-skel-item" v-for="(sk, i) in skelItems" :key="i">
+						<view class="m-skel-icon"></view>
+						<view class="m-skel-bar"></view>
+					</view>
+				</view>
+				<!-- 加载失败：诚实错误态可重试（鉴权失效由拦截器跳登录，不会走到这里；
+				     不再用假流程卡片兜底——那些卡片没有 defineId，点了也是坏的 -->
+				<view v-else-if="menusLoadFailed" class="m-load-error" @tap="loadAppMenus">
+					<text class="m-load-error-text">加载失败，点击重试</text>
+				</view>
+				<view v-else-if="quickGroups.length == 0" class="m-empty-hint">
+					<text class="m-empty-hint-text">暂无可发起流程</text>
+				</view>
+				<template v-else>
+					<view class="m-group" v-for="(group, gi) in quickGroups" :key="gi">
+						<text class="m-group-title" v-if="quickGroups.length > 1">{{group.getString('title') ?? ''}}</text>
+						<view class="m-quick-row">
+							<view class="m-quick-item" v-for="(item, index) in groupItems(group)" :key="index" @tap="onQuickTap(item)">
+								<view class="m-grid-icon" :style="{backgroundColor: item.getString('color') ?? '#2563EB'}">
+									<m-icon :type="item.getString('icon') ?? 'compose'" :size="22" color="#ffffff"></m-icon>
+								</view>
+								<text class="m-grid-label">{{item.getString('title') ?? ''}}</text>
+							</view>
+						</view>
+					</view>
+				</template>
+			</view>
+
+			<!-- 最近发起：工作台真正的「跟踪」 -->
+			<view class="m-section">
+				<view class="m-section-title">
+					<text class="m-section-title-text">最近发起</text>
+					<view class="m-section-more" @tap="goMyInstance()">
+						<text class="m-section-more-text">全部</text>
+						<m-icon type="right" :size="16" color="#999999"></m-icon>
+					</view>
+				</view>
+				<view v-if="recentInstances.length == 0 && recentLoadFailed" class="m-empty-hint" @tap="loadRecent">
+						<text class="m-empty-hint-text">加载失败，点击重试</text>
+					</view>
+					<view v-else-if="recentInstances.length == 0" class="m-empty-hint">
+						<text class="m-empty-hint-text">暂无发起记录，可从上方快捷发起</text>
+					</view>
+				<view v-else class="m-recent-list">
+					<view class="m-recent-item" v-for="(item, index) in recentInstances" :key="index" @tap="onTapRecent(item)">
+						<view class="m-recent-main">
+							<text class="m-recent-name">{{item.getString('displayName') ?? ''}}</text>
+							<text class="m-recent-meta">{{fmtTime(item.getString('createTime') ?? '')}}</text>
+						</view>
+						<text class="m-recent-state" :style="{color: stateColor(item), borderColor: stateColor(item)}">{{stateText(item)}}</text>
+					</view>
+				</view>
+			</view>
+			<view style="height: 24rpx;"></view>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+	</view>
+</template>
+<script lang="uts">
+	import { processDesignListByType, processInstancePage, processInstanceCcList, processTaskTodoList, processTaskDoneList } from '@/api/workflow.uts'
+	import { dictGetByDictType } from '@/api/dict.uts'
+	import { refreshTabBadges } from '@/util/badge.uts'
+	import { resolveWfIcon } from '@/util/wf_icon_map.uts'
+
+	export default {
+		data() {
+			return {
+				refresherTriggered: false,
+				// 快捷发起加载失败：true 显示可重试错误态（不再造假数据兜底）
+				menusLoadFailed: false,
+				// 快捷发起加载中：先渲染骨架，避免首屏闪现「暂无可发起流程」假空态
+				menusLoading: true,
+				// 最近发起加载失败：空态文案切换为可重试提示
+				recentLoadFailed: false,
+				skelItems: ['a', 'b', 'c', 'd'],
+				quickGroups: [] as UTSJSONObject[],
+				typeLabelMap: {} as UTSJSONObject,
+				recentInstances: [] as UTSJSONObject[],
+				// 工作台小指标：todoList/doneList/processInstance page/ccList 各拉 pageSize=1 取 recordCount
+				// （个人视角口径走现有分页接口，契约 12 §3；全局分析口径在统计 tab 的 stats/*）
+				workbenchCounts: {'todo': 0, 'done': 0, 'myStart': 0, 'cc': 0} as UTSJSONObject
+			};
+		},
+		computed: {
+			unreadTodo: (): number => {
+				return this.$store.getUnreadTodo()
+			},
+			unreadMsg: (): number => {
+				return this.$store.getUnreadMsg()
+			}
+		},
+		onShow() {
+			refreshTabBadges()
+			this.loadWorkbenchCounts()
+			// 快捷发起只在首次加载/上次失败未恢复时拉取（失败时 quickGroups 已清空），
+			// 避免每次切 tab 闪骨架重拉
+			if (this.quickGroups.length == 0) {
+				this.loadTypeLabels().finally(() => {
+					this.loadAppMenus()
+				})
+			}
+			this.loadRecent()
+		},
+		methods: {
+			badgeText(n: number): string {
+				const v = Math.round(n)
+				return v > 99 ? '99+' : v.toString()
+			},
+			groupItems(group: UTSJSONObject): UTSJSONObject[] {
+				const arr = group.getArray('items')
+				const out: UTSJSONObject[] = []
+				if (arr == null) {
+					return out
+				}
+				for (let i = 0; i < arr.length; i++) {
+					out.push(arr[i] as UTSJSONObject)
+				}
+				return out
+			},
+			fmtTime(iso: string): string {
+				if (iso.length == 0) {
+					return ''
+				}
+				let t = iso.replace('T', ' ')
+				const dot = t.indexOf('.')
+				if (dot > 0) {
+					t = t.substring(0, dot)
+				}
+				// 工作台只显示月-日 时:分
+				if (t.length >= 16) {
+					return t.substring(5, 16)
+				}
+				return t
+			},
+			stateText(item: UTSJSONObject): string {
+				const s = item.getNumber('state') ?? 0
+				if (s == 10) return '审批中'
+				if (s == 20) return '已通过'
+				if (s == 30) return '已撤回'
+				if (s == 40) return '已中断'
+				if (s == 45) return '已拒绝'
+				if (s == 50) return '待提交'
+				if (s == 99) return '已废弃'
+				return '状态' + s.toString()
+			},
+			stateColor(item: UTSJSONObject): string {
+				const s = item.getNumber('state') ?? 0
+				if (s == 10) return '#2563EB'
+				if (s == 20) return '#16A34A'
+				if (s == 30) return '#F59E0B'
+				if (s == 45) return '#EF4444'
+				return '#999999'
+			},
+			handleRefresherrefresh() {
+				this.refresherTriggered = true
+				this.loadWorkbenchCounts()
+				refreshTabBadges().finally(() => {
+					this.loadTypeLabels().finally(() => {
+						this.loadAppMenus()
+					})
+					this.loadRecent().finally(() => {
+						this.refresherTriggered = false
+					})
+				})
+			},
+			// 四个小指标各拉 pageSize=1 只取 recordCount；单个失败静默保持 0，不阻塞工作台
+			loadWorkbenchCounts() {
+				this.countsPending(0, processTaskTodoList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+				this.countsPending(1, processTaskDoneList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+				this.countsPending(2, processInstancePage({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+				this.countsPending(3, processInstanceCcList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+			},
+			countsPending(idx: number, req: Promise<any>) {
+				const keys = ['todo', 'done', 'myStart', 'cc']
+				req.then((res) => {
+					const data = res as UTSJSONObject
+					const n = data.getNumber('recordCount') ?? 0
+					this.workbenchCounts[keys[idx]] = n
+				}).catch((_e) => {
+					// 保底 0
+				})
+			},
+			loadTypeLabels(): Promise<any> {
+				return new Promise<any>((resolve) => {
+					dictGetByDictType('wf_process_type').then((res) => {
+						const rows = res as UTSJSONObject[]
+						const map = {} as UTSJSONObject
+						if (rows != null) {
+							for (let i = 0; i < rows.length; i++) {
+								const row = rows[i]
+								const v = row.get('value')
+								const label = row.getString('label') ?? ''
+								if (v != null && label.length > 0) {
+									map[v.toString()] = label
+								}
+							}
+						}
+						this.typeLabelMap = map
+						resolve(true)
+					}).catch((_e) => {
+						resolve(false)
+					})
+				})
+			},
+			typeTitle(typeStr: string, apiTitle: string): string {
+				if (apiTitle.length > 0) {
+					return apiTitle
+				}
+				const fromDict = this.typeLabelMap.getString(typeStr)
+				if (fromDict != null && fromDict.length > 0) {
+					return fromDict
+				}
+				if (typeStr.length > 0) {
+					return '分类 ' + typeStr
+				}
+				return '其他'
+			},
+			loadAppMenus() {
+				this.menusLoading = true
+				processDesignListByType().then((res) => {
+					this.quickGroups = this.mapListByType(res)
+					this.menusLoadFailed = false
+				}).catch((_e) => {
+					// 鉴权失效拦截器已跳登录；网络/后端错误诚实呈现为可重试错误态
+					this.quickGroups = [] as UTSJSONObject[]
+					this.menusLoadFailed = true
+				}).finally(() => {
+					this.menusLoading = false
+				})
+			},
+			loadRecent(): Promise<any> {
+				return new Promise<any>((resolve) => {
+					processInstancePage({
+						pageNum: 1,
+						pageSize: 5
+					} as UTSJSONObject).then((res) => {
+						const data = res as UTSJSONObject
+						const rows = data.getArray('rows')
+						this.recentInstances = [] as UTSJSONObject[]
+						if (rows != null) {
+							for (let i = 0; i < rows.length; i++) {
+								this.recentInstances.push(rows[i] as UTSJSONObject)
+							}
+						}
+						this.recentLoadFailed = false
+						resolve(true)
+					}).catch((_e) => {
+						// 失败不再伪装成「暂无发起记录」：空态文案切为可重试
+						this.recentLoadFailed = true
+						resolve(false)
+					})
+				})
+			},
+			mapListByType(res: any): UTSJSONObject[] {
+				const colors = ['#2563EB', '#F59E0B', '#16A34A', '#8B5CF6', '#EC4899', '#0EA5E9']
+				const groupsOut: UTSJSONObject[] = []
+				let colorIdx = 0
+				const groups = this.sortGroupsByType(this.asGroupArray(res))
+				for (let g = 0; g < groups.length; g++) {
+					const group = groups[g]
+					const typeHint = group.getString('type') ?? ''
+					const apiTitle = group.getString('title') ?? ''
+					const items = group.getArray('items')
+					if (items == null) {
+						continue
+					}
+					const sortedItems = this.sortItemsByTitle(items as Array<UTSJSONObject>)
+					const mappedItems: UTSJSONObject[] = []
+					const seenNames: string[] = []
+					for (let i = 0; i < sortedItems.length; i++) {
+						const row = sortedItems[i]
+						const defineId = row.getString('processDefineId') ?? ''
+						if (defineId.length == 0) {
+							continue
+						}
+						const stateNum = row.getNumber('processDefineState')
+						if (stateNum != null && stateNum == 0) {
+							continue
+						}
+						const name = row.getString('name') ?? ''
+						if (name.length > 0) {
+							let dup = false
+							for (let s = 0; s < seenNames.length; s++) {
+								if (seenNames[s] == name) {
+									dup = true
+									break
+								}
+							}
+							if (dup) {
+								continue
+							}
+							seenNames.push(name)
+						}
+						const title = row.getString('displayName') ?? name
+						const apiIcon = row.getString('icon') ?? ''
+						mappedItems.push({
+							title: title.length > 0 ? title : name,
+							icon: resolveWfIcon(apiIcon, typeHint),
+							color: colors[colorIdx % colors.length],
+							define: name,
+							defineId: defineId
+						} as UTSJSONObject)
+						colorIdx++
+					}
+					if (mappedItems.length > 0) {
+						groupsOut.push({
+							title: this.typeTitle(typeHint, apiTitle),
+							type: typeHint,
+							items: mappedItems
+						} as UTSJSONObject)
+					}
+				}
+				return groupsOut
+			},
+			sortGroupsByType(groups: UTSJSONObject[]): UTSJSONObject[] {
+				const out: UTSJSONObject[] = []
+				for (let i = 0; i < groups.length; i++) {
+					out.push(groups[i])
+				}
+				for (let i = 0; i < out.length; i++) {
+					for (let j = i + 1; j < out.length; j++) {
+						const ti = this.parseTypeNum(out[i].getString('type') ?? '')
+						const tj = this.parseTypeNum(out[j].getString('type') ?? '')
+						if (tj < ti) {
+							const tmp = out[i]
+							out[i] = out[j]
+							out[j] = tmp
+						}
+					}
+				}
+				return out
+			},
+			parseTypeNum(typeStr: string): number {
+				if (typeStr.length == 0) {
+					return 999999
+				}
+				const n = parseFloat(typeStr)
+				if (isNaN(n)) {
+					return 999999
+				}
+				return n
+			},
+			sortItemsByTitle(items: Array<UTSJSONObject>): UTSJSONObject[] {
+				const out: UTSJSONObject[] = []
+				for (let i = 0; i < items.length; i++) {
+					out.push(items[i] as UTSJSONObject)
+				}
+				for (let i = 0; i < out.length; i++) {
+					for (let j = i + 1; j < out.length; j++) {
+						const ai = this.itemSortKey(out[i])
+						const aj = this.itemSortKey(out[j])
+						if (aj < ai) {
+							const tmp = out[i]
+							out[i] = out[j]
+							out[j] = tmp
+						}
+					}
+				}
+				return out
+			},
+			itemSortKey(row: UTSJSONObject): string {
+				const title = row.getString('displayName') ?? ''
+				if (title.length > 0) {
+					return title
+				}
+				return row.getString('name') ?? ''
+			},
+			asGroupArray(res: any): UTSJSONObject[] {
+				const out: UTSJSONObject[] = []
+				if (res == null) {
+					return out
+				}
+				try {
+					const wrapped = JSON.parse('{"list":' + JSON.stringify(res) + '}') as UTSJSONObject
+					const list = wrapped.getArray('list')
+					if (list != null) {
+						for (let i = 0; i < list.length; i++) {
+							out.push(list[i] as UTSJSONObject)
+						}
+						return out
+					}
+				} catch (_e) {
+					// fallthrough
+				}
+				if (typeof res === 'object') {
+					const asObj = res as UTSJSONObject
+					const maybeArr = res as Array<UTSJSONObject>
+					if (asObj.getString == null && maybeArr.length != null) {
+						for (let i = 0; i < maybeArr.length; i++) {
+							out.push(maybeArr[i])
+						}
+						return out
+					}
+					const rows = asObj.getArray('rows') ?? asObj.getArray('list') ?? asObj.getArray('data')
+					if (rows != null) {
+						for (let i = 0; i < rows.length; i++) {
+							out.push(rows[i] as UTSJSONObject)
+						}
+					}
+				}
+				return out
+			},
+			goApproval(tab: number) {
+				uni.setStorageSync('pages:approval:tab', tab)
+				uni.switchTab({
+					url: '/pages/approval/approval'
+				})
+			},
+			goMiniIndicator(tab: number) {
+				if (tab === 3) {
+					uni.navigateTo({ url: '/pages/workflow/my-instances' })
+				} else {
+					uni.setStorageSync('pages:approval:tab', tab)
+					uni.switchTab({ url: '/pages/approval/approval' })
+				}
+			},
+			goMessage() {
+				uni.navigateTo({
+					url: '/pages/message/message'
+				})
+			},
+			goMyInstance() {
+				uni.navigateTo({
+					url: '/pages/workflow/my-instances'
+				})
+			},
+			onTapRecent(item: UTSJSONObject) {
+				const id = item.getString('id') ?? ''
+				if (id.length == 0) {
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/workflow/instance-detail?instanceId=' + id
+				})
+			},
+			onQuickTap(item: UTSJSONObject) {
+				const defineId = item.getString('defineId') ?? ''
+				const defineName = item.getString('define') ?? ''
+				if (defineId.length > 0) {
+					uni.navigateTo({
+						url: '/pages/workflow/start-form?defineId=' + defineId
+					})
+				} else if (defineName.length > 0) {
+					uni.navigateTo({
+						url: '/pages/workflow/start-form?defineName=' + defineName
+					})
+				} else {
+					uni.navigateTo({
+						url: '/pages/workflow/start'
+					})
+				}
+			}
+		}
+	}
+</script>
+<style lang="less">
+.m-summary{
+	flex-direction: row;
+	align-items: center;
+	margin: 20rpx;
+	padding: 20rpx 24rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	.m-summary-chip{
+		flex-direction: row;
+		align-items: center;
+		.m-summary-chip-label{
+			font-size: 26rpx;
+			color: #666666;
+		}
+		.m-summary-chip-num{
+			margin-left: 8rpx;
+			font-size: 28rpx;
+			font-weight: bold;
+			color: #333333;
+		}
+		.m-summary-chip-num--hot{
+			color: #EF4444;
+		}
+	}
+	.m-summary-dot{
+		width: 8rpx;
+		height: 8rpx;
+		border-radius: 4rpx;
+		background-color: #DDDDDD;
+		margin: 0 20rpx;
+	}
+	.m-summary-spacer{
+		flex: 1;
+	}
+	.m-summary-link{
+		flex-direction: row;
+		align-items: center;
+		margin-left: 16rpx;
+		.m-summary-link-text{
+			font-size: 24rpx;
+			color: #999999;
+		}
+	}
+}
+.m-section{
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	margin: 0 20rpx 20rpx 20rpx;
+	padding: 24rpx;
+	.m-section-title{
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 16rpx;
+		.m-section-title-text{
+			font-size: 30rpx;
+			font-weight: bold;
+			color: #333333;
+		}
+		.m-section-hint{
+			margin-left: 12rpx;
+			font-size: 20rpx;
+			color: #F59E0B;
+			background-color: #FFFBEB;
+			padding: 2rpx 10rpx;
+			border-radius: 8rpx;
+		}
+		.m-section-more{
+			flex: 1;
+			flex-direction: row;
+			justify-content: flex-end;
+			align-items: center;
+			.m-section-more-text{
+				font-size: 24rpx;
+				color: #999999;
+			}
+		}
+	}
+	.m-group{
+		margin-bottom: 8rpx;
+		.m-group-title{
+			font-size: 24rpx;
+			color: #999999;
+			margin-bottom: 12rpx;
+			margin-top: 8rpx;
+		}
+	}
+	.m-quick-row{
+		flex-direction: row;
+		flex-wrap: wrap;
+		.m-quick-item{
+			width: 25%;
+			justify-content: center;
+			align-items: center;
+			padding: 12rpx 8rpx 16rpx 8rpx;
+		}
+		.m-grid-icon{
+			width: 72rpx;
+			height: 72rpx;
+			border-radius: 18rpx;
+			justify-content: center;
+			align-items: center;
+		}
+		.m-grid-label{
+			margin-top: 10rpx;
+			font-size: 22rpx;
+			color: #555555;
+			text-align: center;
+			lines: 2;
+		}
+	}
+	.m-empty-hint{
+		padding: 24rpx 0 12rpx 0;
+		align-items: center;
+		.m-empty-hint-text{
+			font-size: 24rpx;
+			color: #BBBBBB;
+		}
+	}
+	.m-load-error{
+		justify-content: center;
+		align-items: center;
+		padding: 40rpx 20rpx;
+		.m-load-error-text{
+			font-size: 24rpx;
+			color: #EF4444;
+		}
+	}
+	.m-skel-grid{
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		padding: 10rpx 0;
+		.m-skel-item{
+			width: 150rpx;
+			align-items: center;
+			.m-skel-icon{
+				width: 96rpx;
+				height: 96rpx;
+				border-radius: 24rpx;
+				background-color: #E5E8EF;
+			}
+			.m-skel-bar{
+				width: 96rpx;
+				height: 28rpx;
+				border-radius: 8rpx;
+				background-color: #E5E8EF;
+				margin-top: 16rpx;
+			}
+		}
+	}
+	.m-recent-list{
+		.m-recent-item{
+			flex-direction: row;
+			align-items: center;
+			padding: 20rpx 0;
+			border-bottom: 1rpx solid #F0F0F0;
+			.m-recent-main{
+				flex: 1;
+				.m-recent-name{
+					font-size: 28rpx;
+					color: #333333;
+					font-weight: bold;
+				}
+				.m-recent-meta{
+					margin-top: 6rpx;
+					font-size: 22rpx;
+					color: #999999;
+				}
+			}
+			.m-recent-state{
+				font-size: 22rpx;
+				padding: 2rpx 12rpx;
+				border-radius: 8rpx;
+				border-width: 1rpx;
+				border-style: solid;
+				margin-left: 16rpx;
+			}
+		}
+	}
+	}
+	.m-indicators {
+		flex-direction: row;
+		background-color: #FFFFFF;
+		border-radius: 16rpx;
+		margin-left: 20rpx;
+		margin-right: 20rpx;
+		margin-top: 16rpx;
+		padding-top: 24rpx;
+		padding-bottom: 24rpx;
+	}
+	.m-indicator-item {
+		flex: 1;
+		align-items: center;
+	}
+	.m-indicator-num {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+	.m-indicator-label {
+		font-size: 22rpx;
+		color: #999999;
+		margin-top: 4rpx;
+	}
+</style>

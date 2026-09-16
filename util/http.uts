@@ -1,0 +1,272 @@
+// 自封装 HTTP（照搬 uni-bill-app，POST-only）
+// 契约：
+//   - 全部 POST + JSON；Header: Authorization: Bearer {token}
+//   - 响应 {code, msg, data}，成功 code===0，业务层只拿解包后的 data
+//   - code===99990403（token 无效）→ UC-0113 静默续命：单飞调 /sys/refreshToken
+//     换新 (token, refreshToken) 后重放原请求（只重放一次），用户无感知；
+//     refresh 也失效才清登录态回登录页
+//   - 接口地址走 storage app:base_url 热切换（登录页「切换接口地址」）
+//   - 页面里 this.$responseInterceptor(res) 返回 boolean，决定是否走成功分支
+//     （修正 bill 遗留拼写 $resoposeInterceptor → $responseInterceptor）
+import { SUCCESS_CODE, TOKEN_INVALID_CODE, TOKEY_KEY, REFRESH_TOKEN_KEY, REFRESH_TOKEN_PATH, resolveBaseUrl } from '@/util/const.uts';
+
+// 兼容 bill 的 HttpConfig 调用形态 —— 调用方写 { data: param } as HttpConfig
+export type HttpConfig = {
+    data: UTSJSONObject | null;
+};
+
+// 响应拦截器：入参是业务 data（http 层已 unwrap），返回 true 表示业务成功
+// 特例：登录接口返回的仍是完整 body（含 code/token），带 code 字段时按 SUCCESS_CODE 判断
+export function responseInterceptor(res: any): boolean {
+    if (res == null) return false
+    if (typeof res === 'object') {
+        const body = res as UTSJSONObject
+        if (body.get != null) {
+            const code: number | null = body.get('code') as number | null
+            if (code != null) {
+                return code === SUCCESS_CODE
+            }
+        }
+    }
+    return res != null
+}
+
+// token 失效统一处理：清缓存 + 回登录页（App.uvue onShow 守卫兜底）
+function redirectToLogin() {
+    uni.removeStorageSync(TOKEY_KEY)
+    uni.removeStorageSync(REFRESH_TOKEN_KEY)
+    uni.removeStorageSync('user:is_login')
+    uni.reLaunch({
+        url: '/pages/login/login'
+    })
+}
+
+// 鉴权失效（续命失败）统一 reject 文案：拦截器此刻已清登录态并 reLaunch 登录页，
+// 页面 catch 据此免 toast / 免失败兜底（不再二次提示），改文案只需改这里
+export const ERR_AUTH_REDIRECT = '登录已失效，请重新登录'
+
+function readAccessToken(): string {
+    const tokenRaw = uni.getStorageSync(TOKEY_KEY)
+    let token: string = ''
+    if (typeof tokenRaw === 'string') {
+        token = tokenRaw as string
+    }
+    return token
+}
+
+// ---------------- UC-0113 refreshToken 静默续命 ----------------
+// 全量轮转语义：refresh 成功后旧 access + 旧 refresh 同时失效，返回全新 (token, refreshToken) 对。
+// 因此并发失效只允许发一次 refresh（单飞），其余请求等新 token 后重放——并发各刷各的会互相作废。
+
+// 单飞在飞请求（null = 当前无续命进行中）
+let refreshInflight: Promise<boolean> | null = null
+
+function doRefreshToken(): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+        const refreshRaw = uni.getStorageSync(REFRESH_TOKEN_KEY)
+        let refreshToken: string = ''
+        if (typeof refreshRaw === 'string') {
+            refreshToken = refreshRaw as string
+        }
+        if (refreshToken.length === 0) {
+            // 无 refresh 凭据（旧版本登录留存 / 已被清理）：无命可续
+            resolve(false)
+            return
+        }
+        const baseURL: string = resolveBaseUrl()
+        uni.request<UTSJSONObject>({
+            url: baseURL + REFRESH_TOKEN_PATH,
+            method: 'POST',
+            data: {
+                refreshToken: refreshToken
+            } as UTSJSONObject,
+            header: {
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000,
+            success: (res: RequestSuccess<UTSJSONObject>) => {
+                const body = res.data as UTSJSONObject
+                if (body == null) {
+                    resolve(false)
+                    return
+                }
+                const code = body.getNumber('code')
+                if (code == null || code != SUCCESS_CODE) {
+                    // 含 99990410（refresh 失效/重放，全量轮转防护）：统一按续命失败回登录
+                    resolve(false)
+                    return
+                }
+                const data = body.getJSON('data')
+                if (data == null) {
+                    resolve(false)
+                    return
+                }
+                const newToken = data.getString('token')
+                const newRefresh = data.getString('refreshToken')
+                if (newToken == null || newToken.length === 0 || newRefresh == null || newRefresh.length === 0) {
+                    resolve(false)
+                    return
+                }
+                // 新对整体覆盖旧对（旧 access + 旧 refresh 已同时失效）
+                uni.setStorageSync(TOKEY_KEY, newToken)
+                uni.setStorageSync(REFRESH_TOKEN_KEY, newRefresh)
+                resolve(true)
+            },
+            fail: (_err: RequestFail) => {
+                resolve(false)
+            }
+        } as RequestOptions<UTSJSONObject>)
+    })
+}
+
+// 单飞入口：并发失效共用同一次 refresh；结束后清空，下一轮失效可再发
+function refreshOnce(): Promise<boolean> {
+    const inflight = refreshInflight
+    if (inflight != null) {
+        return inflight
+    }
+    const p = doRefreshToken()
+    refreshInflight = p
+    p.finally(() => {
+        refreshInflight = null
+    })
+    return p
+}
+
+class Http {
+    post(path: string, config: HttpConfig | null = null): Promise<any> {
+        return this._request(path, 'POST', config)
+    }
+    /** GET（如 /dev/schema/getByTableName?tableName=）——query 拼在 path 上 */
+    get(path: string): Promise<any> {
+        return this._request(path, 'GET', null)
+    }
+    /** 原始请求：只管传输与鉴权头，resolve 完整 body {code,msg,data}（空响应/传输失败 reject） */
+    private _send(path: string, method: string, config: HttpConfig | null, token: string): Promise<UTSJSONObject> {
+        return new Promise<UTSJSONObject>((resolve, reject) => {
+            const baseURL: string = resolveBaseUrl()
+
+            const header: UTSJSONObject = {
+                'Content-Type': 'application/json'
+            }
+            if (token.length > 0) {
+                header['Authorization'] = 'Bearer ' + token
+            }
+
+            const url: string = baseURL + path
+            const requestData: UTSJSONObject | null = config != null ? config.data : null
+
+            const options = {
+                url: url,
+                method: method,
+                data: requestData,
+                header: header,
+                timeout: 10000,
+                success: (res: RequestSuccess<UTSJSONObject>) => {
+                    const body: UTSJSONObject = res.data as UTSJSONObject
+                    if (body == null) {
+                        reject('[' + path + '] 响应为空')
+                        return
+                    }
+                    resolve(body)
+                },
+                fail: (err: RequestFail) => {
+                    reject(err.errMsg)
+                }
+            } as RequestOptions<UTSJSONObject>
+
+            uni.request<UTSJSONObject>(options)
+        })
+    }
+    private _request(path: string, method: string, config: HttpConfig | null): Promise<any> {
+        return new Promise<any>((resolve, reject) => {
+            const usedToken = readAccessToken()
+            this._send(path, method, config, usedToken).then((body: UTSJSONObject) => {
+                this._dispatch(path, method, config, usedToken, body, false, resolve, reject)
+            }).catch((_e) => {
+                reject(_e != null ? _e.toString() : '[' + path + '] 请求失败')
+            })
+        })
+    }
+    // 重放（只此一次）：retried=true，响应仍失效直接回登录，不再进续命分支
+    private _replay(path: string, method: string, config: HttpConfig | null, token: string, resolve: (value: any) => void, reject: (reason: any) => void): void {
+        this._send(path, method, config, token).then((body: UTSJSONObject) => {
+            this._dispatch(path, method, config, token, body, true, resolve, reject)
+        }).catch((_e) => {
+            reject(_e != null ? _e.toString() : '[' + path + '] 请求失败')
+        })
+    }
+    /** 业务语义层：解包 data / 静默续命重放 / 透传业务错误 */
+    private _dispatch(path: string, method: string, config: HttpConfig | null, usedToken: string, body: UTSJSONObject, retried: boolean, resolve: (value: any) => void, reject: (reason: any) => void): void {
+        const codeRaw = body.get('code')
+        const code = codeRaw != null && typeof codeRaw === 'number' ? codeRaw as number : -1
+        if (code === SUCCESS_CODE) {
+            const jsonData = body.getJSON('data')
+            if (jsonData != null) {
+                resolve(jsonData)
+                return
+            }
+            const arrData = body.getArray('data')
+            if (arrData != null) {
+                resolve(arrData)
+                return
+            }
+            // 标量 data：getUnreadCount 等返回 number；布尔/字符串也要透传
+            const numData = body.getNumber('data')
+            if (numData != null) {
+                resolve(numData)
+                return
+            }
+            const boolData = body.getBoolean('data')
+            if (boolData != null) {
+                resolve(boolData)
+                return
+            }
+            const strData = body.getString('data')
+            if (strData != null) {
+                resolve(strData)
+                return
+            }
+            // data 为 null/缺失也视为成功（纯写操作）
+            resolve(true)
+            return
+        } else if (code === TOKEN_INVALID_CODE) {
+            // 回环守卫：续命后重放仍失效 / refresh 端点自身被拦 → 只能回登录
+            if (retried || path === REFRESH_TOKEN_PATH) {
+                redirectToLogin()
+                reject(ERR_AUTH_REDIRECT)
+                return
+            }
+            // 并发轮转兜底：本地 token 已被同批单飞换新（本请求只是带着旧 token 出门），
+            // 直接用新 token 重放，不再触发第二次轮转——全量轮转会杀掉上一对新对，防乒乓
+            const storedToken = readAccessToken()
+            if (storedToken.length > 0 && storedToken != usedToken) {
+                this._replay(path, method, config, storedToken, resolve, reject)
+                return
+            }
+            refreshOnce().then((ok: boolean) => {
+                if (!ok) {
+                    redirectToLogin()
+                    reject(ERR_AUTH_REDIRECT)
+                    return
+                }
+                const fresh = readAccessToken()
+                if (fresh.length > 0 && fresh != usedToken) {
+                    this._replay(path, method, config, fresh, resolve, reject)
+                } else {
+                    redirectToLogin()
+                    reject(ERR_AUTH_REDIRECT)
+                }
+            })
+        } else {
+            const msgRaw = body.get('msg')
+            const msg: string = msgRaw != null ? (msgRaw as any).toString() : '业务错误'
+            reject(msg)
+        }
+    }
+}
+
+const http = new Http()
+
+export { http }
+export default http

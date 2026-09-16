@@ -1,0 +1,136 @@
+import { http, HttpConfig } from '@/util/http.uts'
+import { WF_FACADE_PREFIX } from '@/util/const.uts'
+
+/**
+ * jeeflow 门面薄封装：单入口 POST /wf/{action}，仅保留 App 实际调用的 action。
+ * id 类参数一律字符串（雪花 id 契约）；operator 由后端从登录态注入，前端不传。
+ */
+
+// ── 通用 ─────────────────────────────────────────────────────────────────────
+export const wfPost = (action: string, param: UTSJSONObject | null): Promise<any> => {
+	return http.post(WF_FACADE_PREFIX + action, {
+		data: param
+	} as HttpConfig)
+}
+
+// ── processDefine 流程定义域 ─────────────────────────────────────────────────
+// 分页查询流程定义 {pageNum,pageSize,m_t_XXX_yyy...}
+export const processDefinePage = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processDefine/page", param)
+}
+// 流程定义详情 {id} → {jsonObject 流程图JSON...}
+export const processDefineDetail = (id: string): Promise<any> => {
+	return wfPost("processDefine/detail", {
+		id: id
+	} as UTSJSONObject)
+}
+// 发起并执行第一个任务节点 {processDefineId, ...f_ 表单字段} → {processInstanceId}
+export const processDefineStartAndExecute = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processDefine/startAndExecute", param)
+}
+// 按流程定义名称取最新版 {processDefineName}
+export const processDefineGetLastByName = (name: string): Promise<any> => {
+	return wfPost("processDefine/getLastByName", {
+		processDefineName: name
+	} as UTSJSONObject)
+}
+// ── processInstance 流程实例域 ───────────────────────────────────────────────
+// 我发起的流程分页
+export const processInstancePage = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processInstance/page", param)
+}
+// 实例详情 {id} → {formData, jsonObject, tasks?, activeTaskList?...}（前端以 highLight 为准）
+export const processInstanceDetail = (id: string): Promise<any> => {
+	return wfPost("processInstance/detail", {
+		id: id
+	} as UTSJSONObject)
+}
+// 撤回 {id}
+export const processInstanceWithdraw = (id: string): Promise<any> => {
+	return wfPost("processInstance/withdraw", {
+		id: id
+	} as UTSJSONObject)
+}
+// 流程图高亮数据 {id} → {activeNodeNames,historyNodeNames,historyEdgeNames,nodeProgress}
+export const processInstanceHighLight = (id: string): Promise<any> => {
+	return wfPost("processInstance/highLight", {
+		id: id
+	} as UTSJSONObject)
+}
+// 审批记录 {id} → [{taskName,displayName,taskState,operator,finishTime,variable/ext.tf_approvalComment}]
+export const processInstanceApprovalRecord = (id: string): Promise<any> => {
+	return wfPost("processInstance/approvalRecord", {
+		id: id
+	} as UTSJSONObject)
+}
+// 我的抄送分页
+export const processInstanceCcList = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processInstance/ccList", param)
+}
+// 抄送标记已读 {processInstanceId}
+export const processInstanceUpdateCCStatus = (processInstanceId: string): Promise<any> => {
+	return wfPost("processInstance/updateCCStatus", {
+		processInstanceId: processInstanceId
+	} as UTSJSONObject)
+}
+// 把流程抄送给 {processInstanceId, actorIds: string[]}
+export const processInstanceCreateCc = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processInstance/createCcInstance", param)
+}
+
+// ── processTask 流程任务域 ───────────────────────────────────────────────────
+// 待办/已办分页 {pageNum,pageSize}
+export const processTaskTodoList = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/todoList", param)
+}
+export const processTaskDoneList = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/doneList", param)
+}
+// 任务详情 {id} → {taskName,displayName,formKey,executable,ext.isFirstTaskNode,taskModel,jsonObject}
+export const processTaskDetail = (id: string): Promise<any> => {
+	return wfPost("processTask/detail", {
+		id: id
+	} as UTSJSONObject)
+}
+// 审批办理 {processTaskId, submitType, tf_approvalComment, ...}
+// submitType：0 APPLY(重新提交) / 1 AGREE / 2 REJECT / 3 ROLLBACK / 4 JUMP(+taskName) / 6 ROLLBACK_TO_OPERATOR / 20 COUNTERSIGN_DISAGREE
+export const processTaskExecute = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/execute", param)
+}
+// 会签加签 {processTaskId, processInstanceId, actorIds: string[]}
+export const processTaskAddCandidate = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/addCandidate", param)
+}
+// 可跳转节点列表 {processInstanceId} → [{label, value(taskName)}]（已完成、非会签节点）
+export const processTaskJumpAbleTaskNameList = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/jumpAbleTaskNameList", param)
+}
+
+// ── processDesign 流程设计域 ─────────────────────────────────────────────────
+// 按类型分组的可发起流程（工作台九宫格）空体 → [{type,title,items:[...]}]
+// 前端只展示 processDefineState!==0 且有 processDefineId 的项
+export const processDesignListByType = (): Promise<any> => {
+	return wfPost("processDesign/listByType", {} as UTSJSONObject)
+}
+
+// ── processSurrogate 委托代理域 ──────────────────────────────────────────────
+export const processSurrogatePage = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processSurrogate/page", param)
+}
+// 新增/修改 {id?, processName, surrogate, startTime, endTime, enabled}
+export const processSurrogateSave = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processSurrogate/save", param)
+}
+export const processSurrogateUpdate = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processSurrogate/update", param)
+}
+export const processSurrogateDetail = (id: string): Promise<any> => {
+	return wfPost("processSurrogate/detail", {
+		id: id
+	} as UTSJSONObject)
+}
+export const processSurrogateRemove = (id: string): Promise<any> => {
+	return wfPost("processSurrogate/remove", {
+		id: id
+	} as UTSJSONObject)
+}

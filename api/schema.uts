@@ -1,0 +1,10 @@
+import { http } from '@/util/http.uts'
+
+/**
+ * 按表名取数据模型（对齐 boot4 GET /dev/schema/getByTableName）
+ * SchemaWfForm 无内嵌 __schema__ 时的回落路径（同 vben DynamicSchemaForm）。
+ */
+export const schemaGetByTableName = (tableName: string): Promise<any> => {
+	// tableName 仅字母数字下划线，直接拼接（对齐 boot4 GET）
+	return http.get('/dev/schema/getByTableName?tableName=' + tableName)
+}

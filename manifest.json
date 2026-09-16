@@ -1,0 +1,44 @@
+{
+	"name": "jeeflow审批",
+	"appid": "__UNI__7F67CF8",
+	"description": "jeeflow 工作流系列管理系统 · 移动审批端",
+	"versionName": "0.1.0",
+	"versionCode": "10",
+	"uni-app-x": {},
+	/* 应用发布信息 */
+	"app": {
+		"distribute": {
+			"icons": {
+				"android": {
+					"hdpi": "static/app-icons/72x72.png",
+					"xhdpi": "static/app-icons/96x96.png",
+					"xxhdpi": "static/app-icons/144x144.png",
+					"xxxhdpi": "static/app-icons/192x192.png"
+				}
+			}
+		}
+	},
+	"app-android": {
+		"distribute": {
+			"modules": {},
+			"icons": {
+				"hdpi": "static/app-icons/72x72.png",
+				"xhdpi": "static/app-icons/96x96.png",
+				"xxhdpi": "static/app-icons/144x144.png",
+				"xxxhdpi": "static/app-icons/192x192.png"
+			},
+			"splashScreens": {
+				"default": {}
+			}
+		}
+	},
+	"app-ios": {
+		"distribute": {
+			"modules": {},
+			"icons": {
+				"appstore": "static/app-icons/1024x1024.png"
+			},
+			"splashScreens": {}
+		}
+	}
+}

@@ -1,0 +1,28 @@
+import mIconUvue from "./m-icon.uvue";
+/**
+ * 图标map映射
+ */
+export const getIconMap = ():Map<String,String> =>{
+	const res:Map<String,String>  = new Map<String,String>(); 
+	const fs = uni.getFileSystemManager()
+	const jsonStr: any = fs.readFileSync('/static/fonts/iconfont.json','utf-8')
+	const jsonObj = JSON.parse(jsonStr as String) as UTSJSONObject;
+	const glyphs = jsonObj.getArray("glyphs") as Array<UTSJSONObject>
+	for(let i=0;i<glyphs.length;i++) {
+		const obj= glyphs[i] as UTSJSONObject
+		const fontClass = obj.getString('font_class')
+		const unicode = obj.getString('unicode')
+		if(fontClass!=null && unicode!=null) {
+			res.set(fontClass, unicodeToChar(unicode))
+		}
+	
+	}
+	return res
+}
+export const unicodeToChar = (unicode: String): String => {
+  // 将十六进制字符串转换为整数
+  const codePoint = parseInt(unicode, 16);
+  // 将码点转换为字符
+  return String.fromCharCode(codePoint);
+}
+export const mIcon = mIconUvue

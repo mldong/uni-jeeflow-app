@@ -1,0 +1,235 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="false" :moreWidth="'160rpx'">
+			<template #title>
+				<text class="m-nav-title">消息中心</text>
+			</template>
+			<template #more>
+				<view class="m-nav-more" @tap="onMarkAllRead">
+					<text class="m-nav-action">全部已读</text>
+				</view>
+			</template>
+		</m-navigation-bar>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+			@refresherrefresh="handleRefresherrefresh" @scrolltolower="loadMore">
+		<!-- #endif -->
+			<view class="m-msg-list" v-if="list.length > 0">
+				<view class="m-msg-item" v-for="(item, index) in list" :key="index" @tap="onTapItem(item)">
+					<view class="m-msg-dot" :class="isUnread(item) ? 'm-msg-dot-on' : 'm-msg-dot-off'"></view>
+					<view class="m-msg-body">
+						<view class="m-msg-title-row">
+							<text class="m-msg-title" :class="isUnread(item) ? 'm-msg-title-unread' : ''">{{item.getString('title') ?? ''}}</text>
+							<text class="m-msg-type">{{msgTypeText(item)}}</text>
+						</view>
+						<text class="m-msg-content">{{item.getString('content') ?? ''}}</text>
+						<text class="m-msg-meta">{{item.getString('senderName') ?? '系统'}} · {{fmtTime(item.getString('createTime') ?? '')}}</text>
+					</view>
+					<m-icon type="right" :size="20" color="#C8C8C8"></m-icon>
+				</view>
+				<view class="m-list-footer" v-if="list.length >= recordCount">
+					<text class="m-list-footer-text">没有更多了</text>
+				</view>
+			</view>
+			<m-empty-data v-else text="还没有消息" subText="审批提醒、抄送通知会出现在这里"></m-empty-data>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+	</view>
+</template>
+<script lang="uts">
+	import { messagePage, messageSetRead } from '@/api/message.uts'
+	import { refreshTabBadges, applyMsgBadge } from '@/util/badge.uts'
+
+	export default {
+		data() {
+			return {
+				pageNum: 1,
+				pageSize: 15,
+				recordCount: 0,
+				list: [] as UTSJSONObject[],
+				refresherTriggered: false,
+				loading: false
+			};
+		},
+		onShow() {
+			this.reload()
+			refreshTabBadges()
+		},
+		methods: {
+			fmtTime(iso: string): string {
+				if (iso.length == 0) {
+					return ''
+				}
+				let t = iso.replace('T', ' ')
+				const dot = t.indexOf('.')
+				if (dot > 0) {
+					t = t.substring(0, dot)
+				}
+				return t
+			},
+			msgTypeText(item: UTSJSONObject): string {
+				const t = item.getNumber('msgType') ?? 0
+				if (t == 10) return '待办'
+				if (t == 20) return '通知'
+				if (t == 30) return '预警'
+				return ''
+			},
+			isUnread(item: UTSJSONObject): boolean {
+				return (item.getNumber('isRead') ?? 1) == 0
+			},
+			handleRefresherrefresh() {
+				this.refresherTriggered = true
+				this.reload().finally(() => {
+					this.refresherTriggered = false
+				})
+			},
+			loadMore() {
+				if (this.loading || this.list.length >= this.recordCount) {
+					return
+				}
+				this.pageNum++
+				this.requestData()
+			},
+			reload(): Promise<any> {
+				this.pageNum = 1
+				return this.requestData()
+			},
+			requestData(): Promise<any> {
+				this.loading = true
+				return new Promise<any>((resolve, reject) => {
+					messagePage({
+						pageNum: this.pageNum,
+						pageSize: this.pageSize
+					} as UTSJSONObject).then((res) => {
+						const data = res as UTSJSONObject
+						this.recordCount = data.getNumber('recordCount') ?? 0
+						if (this.pageNum == 1) {
+							this.list = [] as UTSJSONObject[]
+						}
+						const rows = data.getArray('rows')
+						if (rows != null) {
+							for (let i = 0; i < rows.length; i++) {
+								this.list.push(rows[i] as UTSJSONObject)
+							}
+						}
+						resolve(true)
+					}).catch((err) => {
+						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+						reject(err)
+					}).finally(() => {
+						this.loading = false
+					})
+				})
+			},
+			onTapItem(item: UTSJSONObject) {
+				const id = item.getString('id') ?? ''
+				if (id.length == 0) {
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/message/detail?id=' + id
+				})
+			},
+			onMarkAllRead() {
+				uni.showModal({
+					title: '全部已读',
+					content: '将当前未读消息全部标记为已读？',
+					success: (res: ShowModalSuccess) => {
+						if (res.confirm) {
+							messageSetRead([] as string[]).then((_r) => {
+								applyMsgBadge(0)
+								this.reload()
+								uni.showToast({ title: '已全部标为已读', icon: 'none' })
+							}).catch((err) => {
+								uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+							})
+						}
+					}
+				})
+			}
+		}
+	}
+</script>
+<style lang="less">
+.m-nav-more{
+	width: 160rpx;
+	height: 88rpx;
+	justify-content: center;
+	align-items: center;
+}
+.m-nav-action{
+	font-size: 26rpx;
+	color: #ffffff;
+}
+.m-msg-list{
+	padding: 16rpx 20rpx;
+}
+.m-msg-item{
+	flex-direction: row;
+	align-items: flex-start;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 24rpx 20rpx;
+	margin-bottom: 16rpx;
+}
+.m-msg-dot{
+	width: 16rpx;
+	height: 16rpx;
+	border-radius: 8rpx;
+	margin-top: 12rpx;
+	margin-right: 16rpx;
+}
+.m-msg-dot-on{
+	background-color: #EF4444;
+}
+.m-msg-dot-off{
+	background-color: #E5E7EB;
+}
+.m-msg-body{
+	flex: 1;
+}
+.m-msg-title-row{
+	flex-direction: row;
+	align-items: center;
+}
+.m-msg-title{
+	flex: 1;
+	font-size: 28rpx;
+	color: #555555;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+.m-msg-title-unread{
+	color: #111111;
+	font-weight: bold;
+}
+.m-msg-type{
+	font-size: 20rpx;
+	color: #2563EB;
+	background-color: #EFF6FF;
+	padding: 2rpx 10rpx;
+	border-radius: 8rpx;
+	margin-left: 12rpx;
+}
+.m-msg-content{
+	margin-top: 8rpx;
+	font-size: 24rpx;
+	color: #888888;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+.m-msg-meta{
+	margin-top: 10rpx;
+	font-size: 22rpx;
+	color: #AAAAAA;
+}
+.m-list-footer{
+	align-items: center;
+	padding: 24rpx;
+}
+.m-list-footer-text{
+	font-size: 22rpx;
+	color: #BBBBBB;
+}
+</style>

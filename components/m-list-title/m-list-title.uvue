@@ -1,0 +1,100 @@
+<template>
+	<view class="m-list mt-20 bg-white" v-if="$collUtil.isNotEmpty(mDataSource)">
+		<view class="m-group-title row h-64  pl-20 justify-content-space-between align-items-flex-center" v-if="group!=null">
+			<slot name="group-title" :data="group">
+				<text style="font-size: 20px;">{{(group as ListTitleType).title}}</text>
+			</slot>
+			<slot name="group-more" :data="group"></slot>
+		</view>
+		<view @tap="onTap(item)" @longpress="onLongpress(item)" v-for="(item,index) in mDataSource" :key="item.key" :class="'m-list-item h-'+height+' row justify-content-space-between'">
+			<view class="row center">
+				<view v-if="$strUtil.isNotEmpty(item.icon)" class="m-icon w-64 center">
+					<slot v-if="$slots.has(item.key+'icon')" :name="item.key+'-icon'" :data="item" :index="index"></slot>
+					<slot v-else name="icon" :data="item" :index="index">
+						<image class="w-48 h-48" mode="aspectFill" :lazy-load="true" v-if="$strUtil.isUrl(item.icon)" :src="item.icon"></image>
+						<m-icon v-else :type="item.icon" :size="24" :color="item.iconColor"></m-icon>
+					</slot>
+				</view>
+				<view v-else class="ml-20"></view>
+				<view class="m-title">
+					<slot v-if="$slots.has(item.key+'-title')" :name="item.key+'-title'" :data="item" :index="index"></slot>
+					<slot v-else name="title" :data="item" :index="index">
+						<text>{{item.title}}</text>
+					</slot>
+				</view>
+			</view>
+			<slot v-if="$slots.has(item.key+'-right')"  :name="item.key+'-right'" :data="item" :index="index"></slot>
+			<slot v-else name="right" :data="item" :index="index">
+				<view class="center w-64">
+					<m-icon :type="rightIcon" :size="24" color="#979797"></m-icon>
+				</view>
+			</slot>
+		</view>
+	</view>
+</template>
+
+<script>
+	import { ListTitleType } from './index.uts'
+	export default {
+		name:"m-list-title",
+		props: {
+			group: {
+				type: Object as PropType<ListTitleType>
+			},
+			dataSource: {
+				type: Array as PropType<ListTitleType[]>,
+				default: [] as ListTitleType[]
+			},
+			rightIcon: {
+				type: String,
+				default: 'right'
+			},
+			ifShow:{
+				type: Function as PropType<(item: ListTitleType)=>boolean>
+			},
+			height: {
+				type: Number,
+				default: 72
+			}
+		},
+		emits: ['itemTap','itemLongpress'],
+		data() {
+			return {
+				
+			};
+		},
+		computed:{
+			mDataSource:():ListTitleType[]=>{
+				if(this.ifShow!=null) {
+					const dataSource = [] as ListTitleType[];
+					this.dataSource.forEach(item=>{
+						const a = this.ifShow!(item)
+						if(a == true) {
+							dataSource.push(item);
+						}
+					})
+					return dataSource;
+					
+				}
+				return this.dataSource;
+			}
+		},
+		methods: {
+			onTap(item:ListTitleType){
+				this.$emit('itemTap',item)
+			},
+			onLongpress(item: ListTitleType){
+				this.$emit('itemLongpress',item)
+			}
+		}
+	}
+</script>
+
+<style lang="scss">
+.m-list-item{
+	border-bottom: 1rpx solid #E7E7E7;
+}
+.m-group-title {
+	border-bottom: 1rpx solid #E7E7E7;
+}
+</style>

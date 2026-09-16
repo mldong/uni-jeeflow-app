@@ -1,0 +1,86 @@
+/**
+ * tabBar 角标同步（审批 index=1）
+ * pages.json tabBar.list：0 工作台 / 1 审批 / 2 统计 / 3 我的
+ * 消息已从 tabBar 移至「我的」页面入口，未读数仍走 store
+ */
+import { messageUnreadCount } from '@/api/message.uts'
+import { processTaskTodoList } from '@/api/workflow.uts'
+import { setUnreadMsg, setUnreadTodo } from '@/store/index.uts'
+
+const TAB_APPROVAL = 1
+
+function badgeText(n: number): string {
+	const v = Math.round(n)
+	if (v <= 0) {
+		return ''
+	}
+	return v > 99 ? '99+' : v.toString()
+}
+
+export function applyTabBadge(index: number, count: number): void {
+	const text = badgeText(count)
+	if (text.length == 0) {
+		uni.removeTabBarBadge({
+			index: index
+		})
+	} else {
+		uni.setTabBarBadge({
+			index: index,
+			text: text
+		})
+	}
+}
+
+export function applyTodoBadge(count: number): void {
+	const v = Math.round(count)
+	setUnreadTodo(v)
+	applyTabBadge(TAB_APPROVAL, v)
+}
+
+export function applyMsgBadge(count: number): void {
+	const v = Math.round(count)
+	setUnreadMsg(v)
+}
+
+/**
+ * 拉取未读消息数 + 待办 recordCount，写 store 并刷 tabBar 角标
+ */
+export function refreshTabBadges(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		let done = 0
+		const finish = () => {
+			done++
+			if (done >= 2) {
+				resolve(true)
+			}
+		}
+		messageUnreadCount().then((res) => {
+			let n = 0
+			if (typeof res === 'number') {
+				n = res as number
+			} else if (res != null && typeof res === 'object') {
+				const obj = res as UTSJSONObject
+				const c = obj.getNumber('count')
+				if (c != null) {
+					n = c
+				}
+			}
+			applyMsgBadge(n)
+		}).catch((_e) => {
+			// 角标失败不阻断页面
+		}).finally(() => {
+			finish()
+		})
+		processTaskTodoList({
+			pageNum: 1,
+			pageSize: 1
+		} as UTSJSONObject).then((res) => {
+			const data = res as UTSJSONObject
+			const count = data.getNumber('recordCount') ?? 0
+			applyTodoBadge(count)
+		}).catch((_e) => {
+		}).finally(() => {
+			finish()
+		})
+	})
+}

@@ -1,0 +1,3 @@
+import mSchemaFormUvue from "./m-schema-form.uvue";
+// SchemaField 类型定义在 @/util/form_schemas.uts（schema 注册表所在，避免循环依赖）
+export const mSchemaForm = mSchemaFormUvue;

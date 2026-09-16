@@ -1,0 +1,266 @@
+<template>
+	<view class="m-main">
+		<view class="m-logo">
+			<image class="m-logo-img" src="/static/app-icons/logo.png" mode="aspectFit"></image>
+			<text class="m-logo-title">jeeflow 审批</text>
+			<text class="m-logo-sub">jeeflow 工作流系列管理系统</text>
+		</view>
+		<view class="m-content">
+			<form class="m-form">
+				<view class="uni-form-item">
+					<view class="uni-label">
+						<m-icon type="person-filled" :size="30"></m-icon>
+					</view>
+					<input class="uni-input" name="userName" v-model="userName" placeholder="请输入用户名"/>
+				</view>
+				<view class="uni-form-item">
+					<view class="uni-label">
+						<m-icon type="locked-filled" :size="30"></m-icon>
+					</view>
+					<input class="uni-input" :password="true" name="password" v-model="password" placeholder="请输入密码"/>
+				</view>
+				<view class="uni-form-item" v-if="captchaFlag">
+					<view class="uni-label">
+						<m-icon type="checkmarkempty" :size="30"></m-icon>
+					</view>
+					<input class="uni-input" name="captcha" v-model="captchaCode" placeholder="请输入验证码"/>
+					<image class="m-captcha" mode="aspectFit" :src="captchaImg" @tap="loadCaptcha"></image>
+				</view>
+				<view class="uni-btn-v flex-row">
+					<button class="btn btn-submit" form-type="submit" type="primary" @tap="handleLogin">登录</button>
+				</view>
+			</form>
+		</view>
+		<!-- production 正式包不出切换入口，锁定 resolveBaseUrl()（pro 线上） -->
+		<view class="m-bottom" v-if="isDev">
+			<text @tap="onTapChangeApiUrl" class="m-change-api">切换接口地址（{{currentBaseUrl}}）</text>
+		</view>
+	</view>
+</template>
+<script lang="uts">
+	import { login, getCaptchaOpenFlag, captcha } from '@/api/user.uts'
+	import { TOKEY_KEY, IS_LOGIN_KEY, SELECT_URL_KEY, SELECT_URL_LABEL, SELECT_URL_VALUE, IS_DEV, resolveBaseUrl } from '@/util/const'
+	import { cleanCache, setRefreshToken } from '@/util/cache_util.uts';
+	export default {
+		data() {
+			return {
+				userName: 'admin',
+				password: '123456',
+				captchaFlag: false,
+				captchaImg: '',
+				captchaUuid: '',
+				captchaCode: ''
+			}
+		},
+		computed: {
+			// uni-app x 模板引用不到 import 标识符（error18），经 computed 暴露给模板
+			isDev: (): boolean => {
+				return IS_DEV
+			},
+			currentBaseUrl: (): string => {
+				return resolveBaseUrl()
+			}
+		},
+		onLoad() {
+			cleanCache()
+			this.$store.resetAuth()
+			this.initCaptcha()
+		},
+		methods: {
+			initCaptcha() {
+				getCaptchaOpenFlag().then((res) => {
+					const flag = (res as UTSJSONObject).getBoolean('flag')
+					this.captchaFlag = flag == true
+					if (this.captchaFlag) {
+						this.loadCaptcha()
+					}
+				}).catch(() => {
+					// 开关接口异常按关闭处理
+					this.captchaFlag = false
+				})
+			},
+			loadCaptcha() {
+				captcha().then((res) => {
+					const data = res as UTSJSONObject
+					this.captchaUuid = data.getString('uuid') ?? ''
+					const b64 = data.getString('base64') ?? ''
+					this.captchaImg = b64.startsWith('data:') ? b64 : 'data:image/png;base64,' + b64
+				}).catch(() => {
+					uni.showToast({
+						title: '验证码加载失败',
+						icon: 'none'
+					})
+				})
+			},
+			onTapChangeApiUrl() {
+				uni.showActionSheet({
+					title: '切换接口地址',
+					itemList: SELECT_URL_LABEL,
+					success: (e: ShowActionSheetSuccess) => {
+						let tapIndex = 0;
+						if (e.tapIndex != null) {
+							tapIndex = parseInt(e.tapIndex.toString())
+						}
+						if (tapIndex < SELECT_URL_LABEL.length - 1) {
+							uni.setStorageSync(SELECT_URL_KEY, SELECT_URL_VALUE[tapIndex])
+							uni.reLaunch({
+								url: '/pages/login/login'
+							})
+						} else {
+							// 最后一个是手输地址
+							uni.showModal({
+								title: '请输入接口地址',
+								editable: true,
+								placeholderText: "http://<局域网IP>:<端口>",
+								success: (res: ShowModalSuccess) => {
+									if (res.confirm) {
+										const content = res.content ?? ''
+										if (content.length == 0) {
+											uni.showToast({
+												title: '接口地址不能为空',
+												icon: "error"
+											})
+											return;
+										}
+										if (!content.startsWith("http://") && !content.startsWith("https://")) {
+											uni.showToast({
+												title: '请输入合法的接口地址',
+												icon: "error"
+											})
+											return;
+										}
+										uni.setStorageSync(SELECT_URL_KEY, content)
+										uni.reLaunch({
+											url: '/pages/login/login'
+										})
+									}
+								}
+							})
+						}
+					}
+				})
+			},
+			async handleLogin() {
+				if (this.$strUtil.isEmpty(this.userName) || this.$strUtil.isEmpty(this.password)) {
+					uni.showToast({
+						title: '用户名或密码不能为空'
+					})
+					return;
+				}
+				if (this.captchaFlag && this.$strUtil.isEmpty(this.captchaCode)) {
+					uni.showToast({
+						title: '请输入验证码'
+					})
+					return;
+				}
+				uni.showLoading({
+					title: "登录中……",
+					mask: true
+				})
+				try {
+					const param = {
+						userName: this.userName,
+						password: this.password
+					} as UTSJSONObject
+					if (this.captchaFlag) {
+						param['code'] = this.captchaCode
+						param['uuid'] = this.captchaUuid
+					}
+					const res = await login(param)
+					if (this.$responseInterceptor(res)) {
+						const data = res as UTSJSONObject
+						const token = data.getString("token")
+						uni.setStorageSync(TOKEY_KEY, this.$strUtil.toStr(token))
+						// UC-0113：refreshToken 与 access 同对保存，access 失效时静默续命用
+						setRefreshToken(data.getString("refreshToken"))
+						uni.setStorageSync(IS_LOGIN_KEY, true)
+						this.$store.setIsLogin(true)
+						uni.reLaunch({
+							url: '/pages/index/index'
+						})
+					}
+				} catch (err) {
+					uni.showToast({
+						title: this.$strUtil.anyToStr(err),
+						icon: 'none'
+					})
+				} finally {
+					uni.hideLoading()
+				}
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+
+.m-main{
+	flex: 1;
+	justify-content: flex-start;
+    align-items: center;
+	background-color: #F5F6FA;
+	.m-logo{
+		margin-top: 160rpx;
+		align-items: center;
+		.m-logo-img{
+			width: 160rpx;
+			height: 160rpx;
+			margin-bottom: 28rpx;
+			border-radius: 32rpx;
+		}
+		.m-logo-title{
+			font-size: 48rpx;
+			font-weight: bold;
+			color: #2563EB;
+		}
+		.m-logo-sub{
+			margin-top: 12rpx;
+			font-size: 24rpx;
+			color: #999999;
+		}
+	}
+	.m-content{
+		margin-top: 100rpx;
+	}
+	.m-form{
+		width: 600rpx;
+		.uni-form-item{
+			flex-direction: row;
+			align-items: center;
+			height: 100rpx;
+			background-color: #ffffff;
+			border-radius: 12rpx;
+			margin-bottom: 24rpx;
+			.uni-label{
+				padding-left: 30rpx;
+			}
+			.uni-input {
+				flex: 1;
+				height: 100rpx;
+				font-size: 28rpx;
+				padding-left: 10rpx;
+			}
+			.m-captcha{
+				width: 180rpx;
+				height: 60rpx;
+				margin: 20rpx;
+			}
+		}
+		.btn-submit{
+			margin-top: 48rpx;
+			background-color: #2563EB;
+			border-radius: 12rpx;
+		}
+	}
+	.m-bottom{
+		position: fixed;
+		bottom: 40rpx;
+		right: 30rpx;
+		.m-change-api{
+			font-size: 24rpx;
+			color: #2563EB;
+			opacity: 0.7;
+		}
+	}
+}
+</style>

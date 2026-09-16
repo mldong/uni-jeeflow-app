@@ -1,0 +1,155 @@
+<template>
+	<view class="m-status-bar">
+	    <!-- 这里是状态栏 -->
+		<view class="m-status-bar-inner"></view>
+	</view>
+	<view class="m-app-bar"> 
+		<view class="m-back-icon" v-if="showBack" @tap="handleBack">
+			<slot name="icon">
+				<m-icon :type="icon" :size="32"></m-icon>
+			</slot>
+		</view>
+		<view :class="titleClass">
+			<view :class="titleContentClass">
+				<slot name="title">
+					<text>{{title}}</text>
+				</slot>
+			</view>
+		</view>
+		<view class="m-more" v-if="$slots.has('more')" @tap="onMore" :style="{width: moreWidth}">
+			<slot name="more">
+				
+			</slot>
+		</view>
+	</view>
+</template>
+
+<script>
+	export default {
+		name:"m-navigation-bar",
+		props: {
+			title: {
+				type: String,
+				default: ''
+			},
+			icon: {
+				type: String,
+				default: 'left'
+			},
+			align: {
+				type: String,
+				default: 'center'
+			},
+			showBack: { // 显示返回区域
+				type: Boolean,
+				default: true
+			},
+			beforeBack: { // 返回前处理，如果返回Promise.resolve(false),则不执行返回
+				type: Function as PropType<() => Promise<Boolean>>
+			},
+			moreWidth: {
+				type: String,
+				default: '64rpx'
+			}
+		},
+		emits: ['back','more'],
+		data() {
+			return {
+				
+			};
+		},
+		computed:{
+			titleClass:():String=>{
+				if(this.showBack) {
+					if(this.$slots.has('more')) {
+						return 'm-title center';
+					} else {
+						return 'm-title center'
+					}
+				}
+				return 'm-title'
+			},
+			titleContentClass:():String=>{
+				let n = 0;
+				if(this.showBack) {
+					n++;
+				}
+				if(this.$slots.has('more')) {
+					n++;
+				}
+				const w = 750 - n*64;
+				if(this.align == 'left') {
+					if(this.showBack) {
+						return `justify-content-flex-start align-items-flex-center row w-${w} h-88 ml-64`
+					} else {
+						return `justify-content-flex-start align-items-flex-center row w-${w} h-88`
+					}
+				} else if(this.align == 'right') {
+					return `justify-content-flex-end align-items-flex-center row w-${w} h-88`
+				}
+				return `center row w-${w} h-88`
+			}
+		},
+		methods:{
+			handleBack(){
+				if(this.beforeBack !=null) {
+					this.beforeBack!().then((res=>{
+						if(res) {
+							uni.navigateBack()
+						}
+						this.$emit('back')
+					}))
+				} else {
+					uni.navigateBack()
+					this.$emit('back')
+				}
+				
+			},
+			onMore(){
+				this.$emit('more')
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.m-status-bar {
+        height: var(--status-bar-height);
+        width: 100%;
+		background-color: #2563EB;
+		.m-status-bar-inner{
+			flex: 1;
+			background-color: black;
+			opacity: 0.2;
+		}
+    }
+	.m-app-bar{
+		height: 88rpx;
+		background-color: #2563EB;
+		flex-direction: row;
+		.m-back-icon{
+			width: 64rpx;
+			height: 88rpx;
+			align-items: center;
+			justify-content: center;
+			position: absolute;
+			z-index: 999;
+			left: 0rpx;
+		}
+		.m-title{
+			flex: 1;
+			flex-direction: row;
+			height: 88rpx;
+			align-items: center;
+		}
+		.m-more{
+			width: 64rpx;
+			height: 88rpx;
+			align-items: center;
+			justify-content: center;
+			position: absolute;
+			right: 0rpx;
+			z-index: 999;
+		}
+	}
+</style>

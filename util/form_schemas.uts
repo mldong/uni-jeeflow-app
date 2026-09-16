@@ -1,0 +1,439 @@
+/**
+ * 表单 schema 注册表 —— m-schema-form 的数据源
+ *
+ * 背景：web 端发起/任务表单是「命名 Vue 组件」（jsonObject.instanceUrl / task.formKey →
+ * wfFormComponentMap），移动端无法复用，故改为 schema JSON 驱动渲染（m-schema-form）。
+ * key = instanceUrl / formKey（小写匹配），未注册的 key 由调用方降级为只读键值列表。
+ *
+ * 字段类型：input | number | textarea | date | select | radio | checkbox | upload
+ * 字段 id 契约（pro 实测 2026-08-30）：
+ *   - 命名组件（LeaveWfForm）：表单 id 已带 f_（f_reasonType / f_day / f_title），提交原样保留
+ *   - SchemaWfForm / __schema__：pro 种子 fieldName 已是 f_sealType（非 sealType）；
+ *     若再 toCamelCase 会变成 fSealType，提交再加 f_ → f_fSealType（pro 站自身双前缀缺陷）。
+ *     App 策略：fieldName 已含 f_/tf_ 则原样作表单 id；否则 toCamelCase 后提交再加 f_
+ */
+export type SchemaField = {
+	field: string; // 表单字段 id（动态=camelCase；命名组件可含 f_）
+	label: string;
+	type: string; // input|number|textarea|date|select|radio|checkbox|upload
+	required: boolean;
+	placeholder: string;
+	options: UTSJSONObject[]; // select/radio/checkbox 静态选项 {label,value}
+	dictType: string; // 远程字典编码（/sys/dict/getByDictType），非空时优先于 options
+	readonly: boolean;
+}
+
+/** 流程表单变量前缀（对齐 vben PROCESS_FORM_FIELD_PREFIX） */
+export const PROCESS_FORM_FIELD_PREFIX = 'f_'
+
+/**
+ * snake_case → camelCase（对齐 vben util/tool.toCamelCase）
+ * leave_type → leaveType；已是 camel 则原样返回。
+ * 注意：勿对已带 f_ 的名调用（f_sealType → fSealType 会翻车）。
+ */
+export const toCamelCase = (str: string): string => {
+	if (str.length == 0) {
+		return str
+	}
+	let result = ''
+	let upperNext = false
+	for (let i = 0; i < str.length; i++) {
+		const c = str.charAt(i)
+		if (c == '_') {
+			upperNext = true
+			continue
+		}
+		if (upperNext) {
+			result += c.toUpperCase()
+			upperNext = false
+		} else {
+			result += c
+		}
+	}
+	return result
+}
+
+/**
+ * 解析动态表单字段 id（schemaFromColumns 唯一入口）。
+ * fieldCamelName 优先；fieldName 已是 f_/tf_ 前缀则原样保留；否则 toCamelCase。
+ */
+export const resolveSchemaFieldId = (fieldName: string, fieldCamelName: string): string => {
+	if (fieldCamelName.length > 0) {
+		return fieldCamelName
+	}
+	if (fieldName.startsWith(PROCESS_FORM_FIELD_PREFIX) || fieldName.startsWith('tf_')) {
+		return fieldName
+	}
+	return toCamelCase(fieldName)
+}
+
+/**
+ * 提交前：非 f_/tf_ 键统一加 f_（对齐 start-process / task-form）
+ */
+export const withProcessFormPrefix = (formData: UTSJSONObject): UTSJSONObject => {
+	const out = {} as UTSJSONObject
+	formData.toMap().forEach((value, key) => {
+		if (key.startsWith(PROCESS_FORM_FIELD_PREFIX) || key.startsWith('tf_')) {
+			out[key] = value
+		} else {
+			out[PROCESS_FORM_FIELD_PREFIX + key] = value
+		}
+	})
+	return out
+}
+
+/**
+ * 回显：schema 字段为 camelCase 时，若 formData 仅有 f_camel，则写入无前缀键供 m-schema-form 读取。
+ * 命名组件字段已带 f_ 时跳过（直接读引擎键）。
+ */
+export const hydrateSchemaFormData = (formData: UTSJSONObject, fields: SchemaField[]): void => {
+	for (let i = 0; i < fields.length; i++) {
+		const f = fields[i].field
+		if (f.startsWith(PROCESS_FORM_FIELD_PREFIX) || f.startsWith('tf_')) {
+			continue
+		}
+		if (formData.get(f) != null) {
+			continue
+		}
+		const v = formData.get(PROCESS_FORM_FIELD_PREFIX + f)
+		if (v != null) {
+			formData[f] = v
+		}
+	}
+}
+
+export type FormSchema = {
+	key: string; // instanceUrl / formKey（小写）
+	title: string;
+	fields: SchemaField[];
+}
+
+const opt = (label: string, value: string): UTSJSONObject => {
+	return { label: label, value: value } as UTSJSONObject
+}
+
+// ── 请假流程（instanceUrl=leaveWfForm，字段对齐 vben leave-wf-form.vue）────────
+// 静态 options 作兜底；dictType 非空时远程拉取覆盖（pro 线上字典已有 5 项）。
+export const leaveSchema: FormSchema = {
+	key: 'leavewfform',
+	title: '请假申请',
+	fields: [
+		{
+			field: 'f_reasonType',
+			label: '请假类型',
+			type: 'select',
+			required: true,
+			placeholder: '请选择请假类型',
+			options: [
+				opt('婚假', '1'),
+				opt('病假', '2'),
+				opt('事假', '3'),
+				opt('年假', '4'),
+				opt('其他', '9')
+			],
+			// pro 站种子字典（mldong-website docs/mysql）；dictType 非空时远程拉取覆盖静态项
+			dictType: 'biz_leave_reason_type',
+			readonly: false
+		},
+		{
+			field: 'f_startTime',
+			label: '开始日期',
+			type: 'date',
+			required: true,
+			placeholder: '请选择',
+			options: [],
+			dictType: '',
+			readonly: false
+		},
+		{
+			field: 'f_startPeriod',
+			label: '开始时段',
+			type: 'select',
+			required: true,
+			placeholder: '请选择',
+			options: [
+				opt('上午', 'AM'),
+				opt('下午', 'PM')
+			],
+			dictType: '',
+			readonly: false
+		},
+		{
+			field: 'f_endTime',
+			label: '结束日期',
+			type: 'date',
+			required: true,
+			placeholder: '请选择',
+			options: [],
+			dictType: '',
+			readonly: false
+		},
+		{
+			field: 'f_endPeriod',
+			label: '结束时段',
+			type: 'select',
+			required: true,
+			placeholder: '请选择',
+			options: [
+				opt('上午', 'AM'),
+				opt('下午', 'PM')
+			],
+			dictType: '',
+			readonly: false
+		},
+		{
+			field: 'f_day',
+			label: '请假天数',
+			type: 'number',
+			required: true,
+			placeholder: '按起止日期自动计算',
+			options: [],
+			dictType: '',
+			readonly: true
+		},
+		{
+			field: 'f_title',
+			label: '请假原因',
+			type: 'textarea',
+			required: true,
+			placeholder: '请输入请假原因',
+			options: [],
+			dictType: '',
+			readonly: false
+		},
+		{
+			field: 'f_attachment',
+			label: '上传附件',
+			type: 'upload',
+			required: false,
+			placeholder: '可选',
+			options: [],
+			dictType: '',
+			readonly: false
+		}
+	] as SchemaField[]
+}
+
+// ── 命名注册表：只挂 instanceUrl（对齐 vben wfFormComponentMap / defineOptions.name）──
+// SchemaWfForm 不注册；走 __schema__ → getByTableName(processDefine.name)。
+// 禁止 defineName（biz_leave / seal_apply…）旁路。
+const schemaRegistry: FormSchema[] = [
+	leaveSchema
+]
+
+const getSchemaByKey = (key: string): FormSchema | null => {
+	if (key.length == 0) {
+		return null
+	}
+	const k = key.toLowerCase()
+	for (let i = 0; i < schemaRegistry.length; i++) {
+		if (schemaRegistry[i].key == k) {
+			return schemaRegistry[i]
+		}
+	}
+	return null
+}
+
+/** 是否元数据表单（对齐 vben SchemaWfForm） */
+export const isSchemaWfForm = (instanceUrl: string): boolean => {
+	return instanceUrl.toLowerCase() == 'schemawfform'
+}
+
+/**
+ * 只按 instanceUrl 查命名表单（对齐 vben wfFormComponentMap.get(instanceUrl)）。
+ * SchemaWfForm / 空 / 未注册 → null；调用方明确失败，禁止 defineName 偷换。
+ */
+export const resolveFormSchema = (instanceUrl: string): FormSchema | null => {
+	if (instanceUrl.length == 0 || isSchemaWfForm(instanceUrl)) {
+		return null
+	}
+	return getSchemaByKey(instanceUrl)
+}
+
+/**
+ * 发起场景是否应跳过该列（主键/雪花 id 等不应出现在申请表单）。
+ * 旁路库 getByTableName 常有 id 列：remark=主键(雪花)、primary=1、listHide=1，但无 addHide。
+ */
+const shouldSkipInitiateColumn = (col: UTSJSONObject, fieldName: string, ext: UTSJSONObject | null): boolean => {
+	if (ext != null && ext!.getNumber('addHide') == 1) {
+		return true
+	}
+	if (fieldName.toLowerCase() == 'id') {
+		return true
+	}
+	const primary = col.getNumber('primary') ?? col.getNumber('isPk')
+	if (primary != null && primary == 1) {
+		return true
+	}
+	if (ext != null) {
+		const extPk = ext!.getNumber('primary') ?? ext!.getNumber('isPk')
+		if (extPk != null && extPk == 1) {
+			return true
+		}
+	}
+	const remark = col.getString('remark') ?? ''
+	if (remark.indexOf('主键') >= 0) {
+		return true
+	}
+	return false
+}
+
+/**
+ * 列数组 → SchemaField[]（__schema__.columns 或 getByTableName.data.columns）
+ * 跳过 addHide=1 / 主键(id|primary|remark含「主键」)；未知组件降级 input（不静默丢列）。
+ * 字段 id = resolveSchemaFieldId（已含 f_/tf_ 则原样，否则 camelCase；提交 withProcessFormPrefix）。
+ * 入参用 any 规避 UTS getArray CapturedType 与 UTSArray 形参不匹配（error17）。
+ */
+export const schemaFromColumns = (columns: any): SchemaField[] | null => {
+	if (columns == null) {
+		return null
+	}
+	const list = columns as Array<UTSJSONObject>
+	if (list.length == 0) {
+		return null
+	}
+	const fields: SchemaField[] = []
+	for (let i = 0; i < list.length; i++) {
+		const col = list[i]
+		const fieldName = col.getString('fieldName') ?? ''
+		if (fieldName.length == 0) {
+			continue
+		}
+		const ext = col.getJSON('ext')
+		if (shouldSkipInitiateColumn(col, fieldName, ext)) {
+			continue
+		}
+		const camel = col.getString('fieldCamelName') ?? ''
+		const fieldId = resolveSchemaFieldId(fieldName, camel)
+		const component = col.getString('component') ?? 'Input'
+		let type = ''
+		let dictType = ''
+		let readonly = false
+		// 对齐 vben buildFormFieldSchema / toComponentProps 常用组件
+		if (component == 'Input' || component == 'InputPassword' || component == 'AutoComplete'
+			|| component == 'StrengthMeter' || component == 'InputCountDown' || component == 'IconPicker'
+			|| component == 'Mentions') {
+			type = 'input'
+		} else if (component == 'Textarea' || component == 'InputTextArea' || component == 'RichText'
+			|| component == 'RichTextEditor' || component == 'Editor' || component == 'Tinymce') {
+			type = 'textarea'
+		} else if (component == 'InputNumber' || component == 'Rate' || component == 'Slider') {
+			type = 'number'
+		} else if (component == 'DatePicker' || component == 'TimePicker' || component == 'RangePicker'
+			|| component == 'MonthPicker' || component == 'WeekPicker') {
+			type = 'date'
+		} else if (component == 'ApiDict') {
+			type = 'select'
+			if (ext != null) {
+				dictType = ext!.getString('ApiDict_code') ?? ext!.getString('code') ?? ''
+			}
+		} else if (component == 'Select' || component == 'ApiSelect' || component == 'ApiTreeSelect'
+			|| component == 'ApiCascader' || component == 'ApiSelectTable' || component == 'TreeSelect'
+			|| component == 'Cascader' || component == 'Transfer' || component == 'ApiTransfer') {
+			type = 'select'
+			if (ext != null) {
+				dictType = ext!.getString(component + '_code') ?? ext!.getString('code') ?? ''
+			}
+		} else if (component == 'RadioGroup' || component == 'Radio' || component == 'ApiRadioGroup') {
+			type = 'radio'
+		} else if (component == 'CheckboxGroup' || component == 'Checkbox') {
+			type = 'checkbox'
+		} else if (component == 'Switch') {
+			// 移动端无 Switch：降级为 select（是/否）
+			type = 'select'
+		} else if (component == 'Upload' || component == 'ImageUpload' || component == 'FileUpload') {
+			type = 'upload'
+		} else {
+			// 未知组件：降级 input，保留列（禁止静默丢字段）
+			type = 'input'
+			readonly = true
+		}
+		let required = false
+		if (ext != null && ext!.getNumber('required') == 1) {
+			required = true
+		}
+		// pro __schema__ 偶发只写 rules:'required'、ext.required 缺失
+		const rules = col.getString('rules') ?? ''
+		if (!required && rules.indexOf('required') >= 0) {
+			required = true
+		}
+		const label = col.getString('remark') ?? (col.getString('label') ?? fieldName)
+		let options: UTSJSONObject[] = [] as UTSJSONObject[]
+		if (component == 'Switch') {
+			options = [opt('是', '1'), opt('否', '0')] as UTSJSONObject[]
+		}
+		fields.push({
+			field: fieldId,
+			label: label,
+			type: type,
+			required: required,
+			placeholder: (type == 'select' || type == 'date' ? '请选择' : '请输入') + label,
+			options: options,
+			dictType: dictType,
+			readonly: readonly
+		} as SchemaField)
+	}
+	if (fields.length == 0) {
+		return null
+	}
+	return fields
+}
+
+/**
+ * 低代码 __schema__ 列定义 → SchemaField[]（pro 站 SchemaWfForm 内嵌路径）
+ */
+export const schemaFromGraph = (graph: UTSJSONObject): SchemaField[] | null => {
+	const sc = graph.getJSON('__schema__')
+	if (sc == null) {
+		return null
+	}
+	return schemaFromColumns(sc!.getArray('columns') as any)
+}
+
+/** getByTableName 响应 data → SchemaField[] */
+export const schemaFromTableModel = (model: UTSJSONObject): SchemaField[] | null => {
+	return schemaFromColumns(model.getArray('columns') as any)
+}
+
+/**
+ * 请假天数自动计算（对齐 vben leave-wf-form 的 trigger 逻辑）
+ * 返回 -1 表示起止不完整
+ */
+export const calcLeaveDays = (formData: UTSJSONObject): number => {
+	const startTime = formData.getString('f_startTime') ?? ''
+	const endTime = formData.getString('f_endTime') ?? ''
+	const startPeriod = formData.getString('f_startPeriod') ?? ''
+	const endPeriod = formData.getString('f_endPeriod') ?? ''
+	if (startTime.length == 0 || endTime.length == 0 || startPeriod.length == 0 || endPeriod.length == 0) {
+		return -1
+	}
+	const startTs = Date.parse(startTime + 'T00:00:00')
+	const endTs = Date.parse(endTime + 'T00:00:00')
+	if (isNaN(startTs) || isNaN(endTs)) {
+		return -1
+	}
+	const diffDays = (endTs - startTs) / 86400000.0
+	let total = 0.0
+	if (diffDays == 0.0) {
+		if (startPeriod == 'AM' && endPeriod == 'AM') {
+			total = 0.5
+		} else if (startPeriod == 'AM' && endPeriod == 'PM') {
+			total = 1.0
+		} else if (startPeriod == 'PM' && endPeriod == 'PM') {
+			total = 0.5
+		} else {
+			return -1
+		}
+	} else if (diffDays < 0) {
+		return -1
+	} else {
+		total = diffDays + 1
+		if (startPeriod == 'PM') {
+			total -= 0.5
+		}
+		if (endPeriod == 'AM') {
+			total -= 0.5
+		}
+	}
+	return Math.round(total * 100) / 100.0
+}

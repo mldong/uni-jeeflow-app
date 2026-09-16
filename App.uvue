@@ -1,0 +1,55 @@
+<script lang="uts">
+	let firstBackTime = 0
+	import { IS_LOGIN_KEY } from '@/util/const.uts'
+	export default {
+		onLaunch: function () {
+			console.log('App Launch')
+		},
+		onShow: function () {
+			console.log('App Show')
+			// 登录守卫：未登录一律回登录页
+			const isLogin = uni.getStorageSync(IS_LOGIN_KEY)
+			if(isLogin != true) {
+				uni.reLaunch({
+					url: '/pages/login/login'
+				})
+			}
+		},
+		onHide: function () {
+			console.log('App Hide')
+		},
+		// #ifdef APP-ANDROID
+		onLastPageBackPress: function () {
+			console.log('App LastPageBackPress')
+			if (firstBackTime == 0) {
+				uni.showToast({
+					title: '再按一次退出应用',
+					position: 'bottom',
+				})
+				firstBackTime = Date.now()
+				setTimeout(() => {
+					firstBackTime = 0
+				}, 2000)
+			} else if (Date.now() - firstBackTime < 2000) {
+				firstBackTime = Date.now()
+				uni.exit()
+			}
+		},
+		// #endif
+		onExit: function () {
+			console.log('App Exit')
+		},
+	}
+</script>
+
+<style lang="less">
+	/*每个页面公共css */
+	.uni-row {
+		flex-direction: row;
+	}
+
+	.uni-column {
+		flex-direction: column;
+	}
+	@import url("@/static/css/common.less");
+</style>

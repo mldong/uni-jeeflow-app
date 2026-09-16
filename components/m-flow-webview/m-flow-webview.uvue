@@ -1,0 +1,145 @@
+<template>
+	<view class="m-flow-wrap">
+		<!-- 懒挂载：graph 未就绪前不渲染 web-view（首屏性能），显示占位 -->
+		<web-view v-if="graph != null" id="flowWebview" class="m-flow-webview" :style="{height: flowHeight + 'rpx'}"
+			src="/static/html/flow.html"></web-view>
+		<view v-else class="m-flow-placeholder">
+			<text class="m-flow-placeholder-text">流程图加载中……</text>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 流程图 webview（static/html/flow.html + mldong-flow-designer-dingtalk viewer）
+	 * 对齐 vben：透传整份 highLight（含 nodeProgress 会签成员进度）。
+	 */
+	export default {
+		name: "m-flow-webview",
+		props: {
+			graph: {
+				type: Object as PropType<UTSJSONObject | null>,
+				default: null
+			},
+			// processInstance/highLight 完整响应（含 nodeProgress）
+			highLight: {
+				type: Object as PropType<UTSJSONObject | null>,
+				default: null
+			},
+			// 兼容旧调用（无 highLight 对象时兜底）
+			activeNames: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			},
+			historyNames: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			},
+			historyEdges: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			}
+		},
+		data() {
+			return {
+				injectedRounds: 0
+			};
+		},
+		computed: {
+			// 按节点估算 web-view 高度：短流程不留大片空白，长流程仍有上限
+			// 基准 300（开始/结束/边）+ 任务节点 120 + 决策节点 180，夹在 360~900
+			flowHeight: (): number => {
+				const g = this.graph
+				if (g == null) {
+					return 900
+				}
+				const nodes = g!.getArray('nodes')
+				if (nodes == null) {
+					return 900
+				}
+				let h = 300
+				for (let i = 0; i < nodes.length; i++) {
+					const n = nodes[i] as UTSJSONObject
+					const t = n.getString('type') ?? ''
+					if (t.indexOf('decision') > -1) {
+						h += 180
+					} else {
+						h += 120
+					}
+				}
+				if (h < 360) {
+					h = 360
+				}
+				if (h > 900) {
+					h = 900
+				}
+				return h
+			}
+		},
+		watch: {
+			graph(_n) {
+				this.injectedRounds = 0
+				this.tryInject()
+			},
+			highLight(_n) {
+				this.injectedRounds = 0
+				this.tryInject()
+			}
+		},
+		mounted() {
+			this.tryInject()
+		},
+		methods: {
+			buildScript(): string {
+				const payload = {
+					graph: this.graph,
+					highLight: this.highLight,
+					activeNames: this.activeNames,
+					historyNames: this.historyNames,
+					historyEdges: this.historyEdges
+				} as UTSJSONObject
+				const json = JSON.stringify(payload)
+				return "window.__flowPayload=" + json + ";try{renderFlow(window.__flowPayload)}catch(e){console.error(e)}"
+			},
+			tryInject() {
+				if (this.graph == null || this.injectedRounds >= 4) {
+					return
+				}
+				const context = uni.createWebviewContext('flowWebview', this)
+				if (context == null) {
+					return
+				}
+				const script = this.buildScript()
+				const self = this
+				const round = this.injectedRounds
+				this.injectedRounds = round + 1
+				setTimeout(() => {
+					context!.evalJS(script)
+					self.tryInject()
+				}, round == 0 ? 600 : (round * 700))
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.m-flow-wrap{
+	flex: 1;
+	overflow: hidden;
+	.m-flow-webview{
+		width: 750rpx;
+		/* 钉钉竖向树比 LF 画布更高，给足可视高度 */
+		height: 900rpx;
+	}
+	.m-flow-placeholder{
+		width: 750rpx;
+		height: 900rpx;
+		justify-content: center;
+		align-items: center;
+		.m-flow-placeholder-text{
+			font-size: 24rpx;
+			color: #BBBBBB;
+		}
+	}
+}
+</style>

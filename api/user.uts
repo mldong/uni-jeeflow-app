@@ -1,0 +1,67 @@
+import { http, HttpConfig } from '@/util/http.uts'
+
+/**
+ * 登录（flag 开启时需带 code/uuid）
+ */
+export const login = (param: UTSJSONObject): Promise<any> => {
+	return http.post("/sys/login", {
+		data: param
+	} as HttpConfig)
+}
+/**
+ * 退出
+ */
+export const logout = (): Promise<any> => {
+	return http.post("/sys/logout")
+}
+/**
+ * 用户信息
+ */
+export const userinfo = (): Promise<any> => {
+	return http.post("/sys/user/info")
+}
+/**
+ * 用户下拉选单 {pageNum,pageSize} → [{label,value}]（统计页 stuckApprover id→姓名映射等）
+ */
+export const userSelect = (param: UTSJSONObject): Promise<any> => {
+	return http.post("/sys/user/select", {
+		data: param
+	} as HttpConfig)
+}
+/**
+ * 用户下拉标准化：data 为 [{label,value}] 或 {rows:[...]} 两种栈形态统一成数组
+ * （审批人/抄送人/加签选单共用；走 http 封装，token 失效同样吃静默续命/跳登录）
+ */
+export const userSelectRows = (): Promise<UTSJSONObject[]> => {
+	return new Promise<UTSJSONObject[]>((resolve, reject) => {
+		userSelect({
+			pageNum: 1,
+			pageSize: 200
+		} as UTSJSONObject).then((res) => {
+			let rows: UTSJSONObject[] | null = res as UTSJSONObject[]
+			if (rows == null) {
+				const obj = res as UTSJSONObject
+				rows = obj != null ? obj!.getArray<UTSJSONObject>('rows') : null
+			}
+			if (rows == null) {
+				resolve([] as UTSJSONObject[])
+				return
+			}
+			resolve(rows)
+		}).catch((err) => {
+			reject(err)
+		})
+	})
+}
+/**
+ * 图形验证码开关
+ */
+export const getCaptchaOpenFlag = (): Promise<any> => {
+	return http.post("/sys/getCaptchaOpenFlag")
+}
+/**
+ * 图形验证码（{uuid, base64}）
+ */
+export const captcha = (): Promise<any> => {
+	return http.post("/sys/captcha")
+}

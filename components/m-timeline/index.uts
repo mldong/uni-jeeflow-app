@@ -1,0 +1,2 @@
+import mTimelineUvue from "./m-timeline.uvue";
+export const mTimeline = mTimelineUvue;

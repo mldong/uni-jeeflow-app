@@ -1,0 +1,149 @@
+{
+	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "jeeflow审批",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/login/login",
+			"style": {
+				"navigationBarTitleText": "登录",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/approval/approval",
+			"style": {
+				"navigationBarTitleText": "审批中心",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/message/message",
+			"style": {
+				"navigationBarTitleText": "消息中心",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/message/detail",
+			"style": {
+				"navigationBarTitleText": "消息详情",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/personal/personal",
+			"style": {
+				"navigationBarTitleText": "我的",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/workflow/start",
+			"style": {
+				"navigationBarTitleText": "发起流程",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/workflow/start-form",
+			"style": {
+				"navigationBarTitleText": "流程表单",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/workflow/task-detail",
+			"style": {
+				"navigationBarTitleText": "任务详情",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/workflow/my-instances",
+			"style": {
+				"navigationBarTitleText": "我发起的",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/workflow/instance-detail",
+			"style": {
+				"navigationBarTitleText": "流程详情",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/personal/surrogate",
+			"style": {
+				"navigationBarTitleText": "委托代理",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/personal/surrogate-form",
+			"style": {
+				"navigationBarTitleText": "委托表单",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/analytics/analytics",
+			"style": {
+				"navigationBarTitleText": "统计分析",
+				"navigationStyle": "custom"
+			}
+		}
+	],
+	"tabBar": {
+		"color": "#BBBBBB",
+		"selectedColor": "#2563EB",
+		"borderStyle": "black",
+		"backgroundColor": "#ffffff",
+		"iconfontSrc": "static/fonts/uniicons.ttf",
+		"list": [{
+			"pagePath": "pages/index/index",
+			"text": "工作台",
+			"iconfont": {
+				"color": "#BBBBBB",
+				"selectedColor": "#2563EB",
+				"text": "\ue662"
+			}
+		}, {
+			"pagePath": "pages/approval/approval",
+			"text": "审批",
+			"iconfont": {
+				"color": "#BBBBBB",
+				"selectedColor": "#2563EB",
+				"text": "\ue65c"
+			}
+		}, {
+			"pagePath": "pages/analytics/analytics",
+			"text": "统计",
+			"iconfont": {
+				"color": "#BBBBBB",
+				"selectedColor": "#2563EB",
+				"text": "\ue627"
+			}
+		}, {
+			"pagePath": "pages/personal/personal",
+			"text": "我的",
+			"iconfont": {
+				"color": "#BBBBBB",
+				"selectedColor": "#2563EB",
+				"text": "\ue699"
+			}
+		}]
+	},
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "jeeflow移动审批",
+		"navigationBarBackgroundColor": "#2563EB",
+		"backgroundColor": "#F5F6FA"
+	},
+	"uniIdRouter": {}
+}

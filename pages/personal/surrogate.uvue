@@ -1,0 +1,246 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="true">
+			<template #title>
+				<text class="m-nav-title">委托代理</text>
+			</template>
+			<template #more>
+				<view @tap="onAdd" style="width: 64rpx;height: 88rpx;justify-content: center;align-items: center;">
+					<m-icon type="plusempty" :size="26" color="#ffffff"></m-icon>
+				</view>
+			</template>
+		</m-navigation-bar>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+			@refresherrefresh="handleRefresherrefresh">
+		<!-- #endif -->
+			<view class="m-sg-list" v-if="list.length > 0">
+				<view class="m-sg-item" v-for="(item, index) in list" :key="index">
+					<view class="m-sg-info" @tap="onEdit(item)">
+						<view class="m-sg-title-row">
+							<text class="m-sg-name">{{flowName(item)}}</text>
+							<text class="m-sg-enabled" :style="{color: (item.getNumber('enabled') ?? 1) == 1 ? '#16A34A' : '#999999'}">
+								{{(item.getNumber('enabled') ?? 1) == 1 ? '启用中' : '已停用'}}
+							</text>
+						</view>
+						<text class="m-sg-meta">代理人：{{userName(item.getString('surrogate') ?? '')}}</text>
+						<text class="m-sg-meta">{{fmtTime(item.getString('startTime') ?? '')}} ~ {{fmtTime(item.getString('endTime') ?? '')}}</text>
+					</view>
+					<view class="m-sg-del" @tap="onRemove(item)">
+						<m-icon type="trash" :size="22" color="#EF4444"></m-icon>
+					</view>
+				</view>
+			</view>
+			<m-empty-data v-else></m-empty-data>
+			<view class="m-sg-tip" v-if="list.length > 0">
+				<text class="m-sg-tip-text">点击规则可修改；停用期间委托不生效</text>
+			</view>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+	</view>
+</template>
+<script lang="uts">
+	import { processSurrogatePage, processSurrogateRemove } from '@/api/workflow.uts'
+	import { userSelectRows } from '@/api/user.uts'
+	import { loadFlowNames } from '@/util/names.uts'
+
+	export default {
+		data() {
+			return {
+				list: [] as UTSJSONObject[],
+				userNames: {} as UTSJSONObject,
+				// 流程技术名（biz_leave）→ 显示名（请假申请）
+				flowNames: {} as UTSJSONObject,
+				// 映射表异步到位后驱动模板重算
+				flowNameTick: 0,
+				refresherTriggered: false,
+				loading: false
+			};
+		},
+		onShow() {
+			this.requestData()
+			this.loadUserNames()
+			loadFlowNames().then((map) => {
+				this.flowNames = map
+				this.flowNameTick = this.flowNameTick + 1
+			})
+		},
+		methods: {
+			fmtTime(iso: string): string {
+				if (iso.length == 0) {
+					return '—'
+				}
+				let t = iso.replace('T', ' ')
+				const dot = t.indexOf('.')
+				if (dot > 0) {
+					t = t.substring(0, dot)
+				}
+				// 日期部分即可（代理按天粒度）
+				const sp = t.indexOf(' ')
+				return sp > 0 ? t.substring(0, sp) : t
+			},
+			userName(id: string): string {
+				if (id.length == 0) {
+					return '—'
+				}
+				const name = this.userNames.getString(id)
+				if (name != null && name.length > 0) {
+					return name!
+				}
+				return id
+			},
+			// processName 存的是技术名（biz_leave 等）→ 流程显示名；空串=全部流程
+			flowName(item: UTSJSONObject): string {
+				// 触达 flowNameTick，保证映射表异步到位后重渲染
+				const _tick = this.flowNameTick
+				const pn = item.getString('processName') ?? ''
+				if (pn.length == 0) {
+					return '全部流程'
+				}
+				const disp = this.flowNames.getString(pn)
+				if (disp != null && disp.length > 0) {
+					return disp!
+				}
+				return pn
+			},
+			loadUserNames() {
+				const cached = uni.getStorageSync('app:user:names')
+				if (cached != null) {
+					const cs = cached.toString()
+					if (cs.length > 0) {
+						try {
+							const obj = JSON.parse(cs) as UTSJSONObject
+							if (obj != null) {
+								this.userNames = obj!
+							}
+						} catch (e) { }
+					}
+				}
+				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
+				userSelectRows().then((rows) => {
+					const map = {} as UTSJSONObject
+					for (let i = 0; i < rows.length; i++) {
+						const row = rows[i]
+						const v = row.getString('value')
+						const l = row.getString('label')
+						if (v != null && l != null) {
+							map[v!] = l!
+						}
+					}
+					this.userNames = map
+					uni.setStorageSync('app:user:names', JSON.stringify(map))
+				}).catch((_e) => { })
+			},
+			handleRefresherrefresh() {
+				this.refresherTriggered = true
+				this.requestData().finally(() => {
+					this.refresherTriggered = false
+				})
+			},
+			requestData(): Promise<any> {
+				if (this.loading) {
+					return Promise.resolve(true)
+				}
+				this.loading = true
+				uni.showLoading({ title: '加载中', mask: true })
+				return new Promise<any>((resolve, reject) => {
+					processSurrogatePage({
+						pageNum: 1,
+						pageSize: 50
+					} as UTSJSONObject).then((res) => {
+						const data = res as UTSJSONObject
+						this.list = [] as UTSJSONObject[]
+						const rows = data.getArray('rows')
+						if (rows != null) {
+							for (let i = 0; i < rows.length; i++) {
+								this.list.push(rows[i] as UTSJSONObject)
+							}
+						}
+						resolve(true)
+					}).catch((err) => {
+						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+						reject(err)
+					}).finally(() => {
+						uni.hideLoading()
+						this.loading = false
+					})
+				})
+			},
+			onAdd() {
+				uni.navigateTo({
+					url: '/pages/personal/surrogate-form'
+				})
+			},
+			onEdit(item: UTSJSONObject) {
+				const id = item.getString('id') ?? ''
+				uni.navigateTo({
+					url: '/pages/personal/surrogate-form?id=' + id
+				})
+			},
+			onRemove(item: UTSJSONObject) {
+				const id = item.getString('id') ?? ''
+				uni.showModal({
+					title: '删除委托',
+					content: '确定删除该委托代理规则？',
+					success: (res: ShowModalSuccess) => {
+						if (!res.confirm) return
+						processSurrogateRemove(id).then((_r) => {
+							uni.showToast({ title: '已删除', icon: 'success' })
+							this.requestData()
+						}).catch((err) => {
+							uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+						})
+					}
+				})
+			}
+		}
+	}
+</script>
+<style lang="less">
+.m-sg-list{
+	padding: 20rpx;
+	.m-sg-item{
+		flex-direction: row;
+		align-items: center;
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		padding: 28rpx 24rpx;
+		margin-bottom: 20rpx;
+		.m-sg-info{
+			flex: 1;
+			.m-sg-title-row{
+				flex-direction: row;
+				align-items: center;
+				justify-content: space-between;
+				.m-sg-name{
+					font-size: 30rpx;
+					font-weight: bold;
+					color: #333333;
+				}
+				.m-sg-enabled{
+					font-size: 22rpx;
+				}
+			}
+			.m-sg-meta{
+				margin-top: 8rpx;
+				font-size: 22rpx;
+				color: #999999;
+			}
+		}
+		.m-sg-del{
+			width: 64rpx;
+			height: 88rpx;
+			justify-content: center;
+			align-items: center;
+		}
+	}
+}
+.m-sg-tip{
+	padding: 0 30rpx;
+	.m-sg-tip-text{
+		font-size: 22rpx;
+		color: #BBBBBB;
+	}
+}
+</style>

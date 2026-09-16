@@ -1,0 +1,210 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="true">
+			<template #title>
+				<text class="m-nav-title">消息详情</text>
+			</template>
+		</m-navigation-bar>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;">
+		<!-- #endif -->
+			<view class="m-card" v-if="loaded">
+				<view class="m-type-row">
+					<text class="m-type-tag">{{msgTypeText}}</text>
+					<text class="m-read-tag" v-if="isRead">已读</text>
+					<text class="m-unread-tag" v-else>未读</text>
+				</view>
+				<text class="m-title">{{title}}</text>
+				<text class="m-meta">{{senderName}} · {{createTime}}</text>
+				<view class="m-divider"></view>
+				<text class="m-content">{{content}}</text>
+				<button class="m-jump-btn" v-if="jumpUrl.length > 0" type="primary" @tap="onJump">查看相关流程</button>
+			</view>
+			<m-empty-data v-else></m-empty-data>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+	</view>
+</template>
+<script lang="uts">
+	import { messageDetail, messageSetRead, messageUnreadCount } from '@/api/message.uts'
+	import { applyMsgBadge } from '@/util/badge.uts'
+
+	export default {
+		data() {
+			return {
+				id: '',
+				loaded: false,
+				title: '',
+				content: '',
+				senderName: '',
+				createTime: '',
+				msgType: 0,
+				isRead: true,
+				jumpUrl: '',
+				bizId: ''
+			};
+		},
+		computed: {
+			msgTypeText: (): string => {
+				const t = this.msgType
+				if (t == 10) return '待办消息'
+				if (t == 20) return '通知消息'
+				if (t == 30) return '预警消息'
+				return '消息'
+			}
+		},
+		onLoad(options: OnLoadOptions) {
+			const id = options['id']
+			if (id != null) {
+				this.id = id as string
+			}
+			if (this.id.length > 0) {
+				this.loadDetail()
+			}
+		},
+		methods: {
+			fmtTime(iso: string): string {
+				if (iso.length == 0) {
+					return ''
+				}
+				let t = iso.replace('T', ' ')
+				const dot = t.indexOf('.')
+				if (dot > 0) {
+					t = t.substring(0, dot)
+				}
+				return t
+			},
+			loadDetail() {
+				uni.showLoading({ title: '加载中', mask: true })
+				messageDetail(this.id).then((res) => {
+					const data = res as UTSJSONObject
+					this.title = data.getString('title') ?? ''
+					this.content = data.getString('content') ?? ''
+					this.senderName = data.getString('senderName') ?? '系统'
+					this.createTime = this.fmtTime(data.getString('createTime') ?? '')
+					this.msgType = data.getNumber('msgType') ?? 0
+					this.isRead = (data.getNumber('isRead') ?? 0) == 1
+					this.jumpUrl = data.getString('url') ?? ''
+					this.bizId = data.getString('bizId') ?? ''
+					this.loaded = true
+					if (!this.isRead) {
+						this.markRead()
+					}
+				}).catch((err) => {
+					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+				}).finally(() => {
+					uni.hideLoading()
+				})
+			},
+			markRead() {
+				const ids: string[] = []
+				ids.push(this.id)
+				messageSetRead(ids).then((_r) => {
+					this.isRead = true
+					messageUnreadCount().then((c) => {
+						let n = 0
+						if (typeof c === 'number') {
+							n = c as number
+						}
+						applyMsgBadge(n)
+					}).catch((_e) => { })
+				}).catch((_e) => { })
+			},
+			onJump() {
+				// url 形如 /wf/process-task/todo?id=TASK&processInstanceId=INST
+				const url = this.jumpUrl
+				let taskId = ''
+				let instanceId = ''
+				const qIdx = url.indexOf('?')
+				if (qIdx >= 0) {
+					const qs = url.substring(qIdx + 1)
+					const parts = qs.split('&')
+					for (let i = 0; i < parts.length; i++) {
+						const kv = parts[i].split('=')
+						if (kv.length >= 2) {
+							if (kv[0] == 'id') {
+								taskId = kv[1]
+							} else if (kv[0] == 'processInstanceId') {
+								instanceId = kv[1]
+							}
+						}
+					}
+				}
+				if (taskId.length > 0 && url.indexOf('process-task') >= 0) {
+					uni.navigateTo({
+						url: '/pages/workflow/task-detail?taskId=' + taskId
+					})
+					return
+				}
+				if (instanceId.length > 0) {
+					uni.navigateTo({
+						url: '/pages/workflow/instance-detail?instanceId=' + instanceId
+					})
+					return
+				}
+				if (this.bizId.length > 0) {
+					uni.navigateTo({
+						url: '/pages/workflow/instance-detail?instanceId=' + this.bizId
+					})
+					return
+				}
+				uni.showToast({ title: '暂无关联跳转', icon: 'none' })
+			}
+		}
+	}
+</script>
+<style lang="less">
+.m-card{
+	margin: 20rpx;
+	padding: 32rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+}
+.m-type-row{
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 16rpx;
+}
+.m-type-tag{
+	font-size: 22rpx;
+	color: #2563EB;
+	background-color: #EFF6FF;
+	padding: 4rpx 12rpx;
+	border-radius: 8rpx;
+}
+.m-read-tag{
+	margin-left: 12rpx;
+	font-size: 22rpx;
+	color: #16A34A;
+}
+.m-unread-tag{
+	margin-left: 12rpx;
+	font-size: 22rpx;
+	color: #EF4444;
+}
+.m-title{
+	font-size: 34rpx;
+	font-weight: bold;
+	color: #111111;
+	lines: 3;
+}
+.m-meta{
+	margin-top: 12rpx;
+	font-size: 24rpx;
+	color: #999999;
+}
+.m-divider{
+	height: 1px;
+	background-color: #F0F0F0;
+	margin: 24rpx 0;
+}
+.m-content{
+	font-size: 28rpx;
+	color: #444444;
+	line-height: 44rpx;
+}
+.m-jump-btn{
+	margin-top: 40rpx;
+}
+</style>

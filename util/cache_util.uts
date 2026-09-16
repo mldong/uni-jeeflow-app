@@ -1,0 +1,86 @@
+import { TOKEY_KEY, REFRESH_TOKEN_KEY, IS_LOGIN_KEY, USER_INFO_KEY, UNREAD_MSG_KEY, UNREAD_TODO_KEY } from '../util/const'
+
+/**
+ * 清理登录相关缓存（退出登录 / token 失效时调用）
+ * 保留 app:base_url（接口地址切换是设备级配置）
+ */
+export const cleanCache = () => {
+	uni.removeStorageSync(TOKEY_KEY)
+	uni.removeStorageSync(REFRESH_TOKEN_KEY)
+	uni.removeStorageSync(IS_LOGIN_KEY)
+	uni.removeStorageSync(USER_INFO_KEY)
+	uni.removeStorageSync(UNREAD_MSG_KEY)
+	uni.removeStorageSync(UNREAD_TODO_KEY)
+}
+
+export const setToken = (token: string | null) => {
+	if (token == null) return;
+	uni.setStorageSync(TOKEY_KEY, token)
+}
+export const getToken = (): string => {
+	const raw = uni.getStorageSync(TOKEY_KEY)
+	if (raw != null) {
+		return raw.toString();
+	}
+	return ''
+}
+
+// UC-0113 refreshToken 同对存取（access 失效时静默续命的唯一凭据）
+export const setRefreshToken = (token: string | null) => {
+	if (token == null) return;
+	uni.setStorageSync(REFRESH_TOKEN_KEY, token)
+}
+export const getRefreshToken = (): string => {
+	const raw = uni.getStorageSync(REFRESH_TOKEN_KEY)
+	if (raw != null) {
+		return raw.toString();
+	}
+	return ''
+}
+
+export const setUserInfo = (userinfo: UTSJSONObject | null): void => {
+	if (userinfo != null) {
+		uni.setStorageSync(USER_INFO_KEY, JSON.stringify(userinfo))
+	}
+}
+export const getUserInfo = (): UTSJSONObject => {
+	const cacheUserinfoStr = uni.getStorageSync(USER_INFO_KEY)
+	if (cacheUserinfoStr != null) {
+		const str = cacheUserinfoStr.toString()
+		if (str.length > 0) {
+			try {
+				const cacheUserinfo = JSON.parse(str) as UTSJSONObject
+				if (cacheUserinfo != null) {
+					return cacheUserinfo
+				}
+			} catch (e) {
+				// JSON 解析失败,返回空对象
+			}
+		}
+	}
+	return {} as UTSJSONObject
+}
+
+/**
+ * 未读角标缓存（消息中心 / 待办）
+ */
+export const setUnreadMsgCount = (count: number) => {
+	uni.setStorageSync(UNREAD_MSG_KEY, count)
+}
+export const getUnreadMsgCount = (): number => {
+	const raw = uni.getStorageSync(UNREAD_MSG_KEY)
+	if (raw != null && typeof raw === 'number') {
+		return raw as number
+	}
+	return 0
+}
+export const setUnreadTodoCount = (count: number) => {
+	uni.setStorageSync(UNREAD_TODO_KEY, count)
+}
+export const getUnreadTodoCount = (): number => {
+	const raw = uni.getStorageSync(UNREAD_TODO_KEY)
+	if (raw != null && typeof raw === 'number') {
+		return raw as number
+	}
+	return 0
+}

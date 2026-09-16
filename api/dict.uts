@@ -1,0 +1,11 @@
+import { http, HttpConfig } from '@/util/http.uts'
+
+/**
+ * 字典（免权限下拉）
+ */
+// 按字典编码取选项 [{label, value(int|string), ext}]
+export const dictGetByDictType = (dictType: string): Promise<any> => {
+	return http.post("/sys/dict/getByDictType", {
+		data: { dictType: dictType } as UTSJSONObject
+	} as HttpConfig)
+}

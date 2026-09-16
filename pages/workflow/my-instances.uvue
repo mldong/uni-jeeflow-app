@@ -1,0 +1,376 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="true">
+			<template #title>
+				<text class="m-nav-title">我发起的</text>
+			</template>
+		</m-navigation-bar>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+			@refresherrefresh="handleRefresherrefresh" @scrolltolower="loadMore">
+		<!-- #endif -->
+			<view class="m-inst-list" v-if="instances.length > 0">
+				<view class="m-inst-card" v-for="(item, index) in instances" :key="index">
+					<view class="m-inst-item" @tap="onTapItem(item)">
+						<view class="m-inst-info">
+							<view class="m-inst-title-row">
+								<text class="m-inst-name">{{item.getString('displayName') ?? ''}}</text>
+								<text class="m-inst-state" :style="{color: stateColor(item), borderColor: stateColor(item)}">{{stateText(item)}}</text>
+							</view>
+							<text class="m-inst-meta">v{{item.getNumber('version') ?? 1}} · {{fmtTime(item.getString('createTime') ?? '')}}</text>
+						</view>
+						<m-icon type="right" :size="20" color="#C8C8C8"></m-icon>
+					</view>
+					<!-- 对齐 vben 列表操作：详情 / 抄送给 / 撤回(审批中) / 重新发起(已撤回) -->
+					<view class="m-inst-actions">
+						<text class="m-act m-act-muted" @tap="onTapItem(item)">详情</text>
+						<text class="m-act" @tap="onCreateCc(item)">抄送给</text>
+						<text class="m-act m-act-danger" v-if="canWithdraw(item)" @tap="onWithdraw(item)">撤回</text>
+						<text class="m-act m-act-primary" v-if="canRestart(item)" @tap="onRestart(item)">重新发起</text>
+					</view>
+				</view>
+				<view class="m-list-footer" v-if="instances.length >= recordCount">
+					<text class="m-list-footer-text">没有更多了</text>
+				</view>
+			</view>
+			<!-- 首屏失败：诚实错误态可重试（鉴权失效由拦截器跳登录，不会走到这里） -->
+			<view v-else-if="loadFailed" class="m-load-error" @tap="reload">
+				<text class="m-load-error-text">加载失败，点击重试</text>
+			</view>
+			<m-empty-data v-else></m-empty-data>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+	</view>
+</template>
+<script lang="uts">
+	import { processInstancePage, processInstanceWithdraw, processInstanceCreateCc } from '@/api/workflow.uts'
+	import { userSelectRows } from '@/api/user.uts'
+	import { ERR_AUTH_REDIRECT } from '@/util/http.uts'
+
+	export default {
+		data() {
+			return {
+				pageNum: 1,
+				pageSize: 10,
+				recordCount: 0,
+				instances: [] as UTSJSONObject[],
+				users: [] as UTSJSONObject[],
+				// 首屏加载失败标记：true 时显示可重试错误态而非「暂无数据」
+				loadFailed: false,
+				refresherTriggered: false,
+				loading: false,
+				acting: false
+			};
+		},
+		onShow() {
+			if (uni.getStorageSync('pages:workflow:my-instances:refresh') == true || this.instances.length == 0) {
+				uni.removeStorageSync('pages:workflow:my-instances:refresh')
+				this.reload()
+			}
+			if (this.users.length == 0) {
+				this.loadUsers()
+			}
+		},
+		methods: {
+			fmtTime(iso: string): string {
+				if (iso.length == 0) {
+					return ''
+				}
+				let t = iso.replace('T', ' ')
+				const dot = t.indexOf('.')
+				if (dot > 0) {
+					t = t.substring(0, dot)
+				}
+				return t
+			},
+			stateText(item: UTSJSONObject): string {
+				const s = item.getNumber('state') ?? 0
+				if (s == 10) return '审批中'
+				if (s == 20) return '已通过'
+				if (s == 30) return '已撤回'
+				if (s == 40) return '已中断'
+				if (s == 45) return '已拒绝'
+				if (s == 50) return '待提交'
+				if (s == 99) return '已废弃'
+				return '状态' + s.toString()
+			},
+			stateColor(item: UTSJSONObject): string {
+				const s = item.getNumber('state') ?? 0
+				if (s == 10) return '#2563EB'
+				if (s == 20) return '#16A34A'
+				if (s == 30) return '#F59E0B'
+				if (s == 45) return '#EF4444'
+				return '#999999'
+			},
+			canWithdraw(item: UTSJSONObject): boolean {
+				return (item.getNumber('state') ?? 0) == 10
+			},
+			canRestart(item: UTSJSONObject): boolean {
+				return (item.getNumber('state') ?? 0) == 30
+			},
+			handleRefresherrefresh() {
+				this.refresherTriggered = true
+				this.reload().finally(() => {
+					this.refresherTriggered = false
+				})
+			},
+			loadMore() {
+				if (this.loading || this.instances.length >= this.recordCount) {
+					return
+				}
+				this.pageNum++
+				this.requestData()
+			},
+			reload(): Promise<any> {
+				this.pageNum = 1
+				return this.requestData()
+			},
+			requestData(): Promise<any> {
+				this.loading = true
+				return new Promise<any>((resolve, reject) => {
+					processInstancePage({
+						pageNum: this.pageNum,
+						pageSize: this.pageSize
+					} as UTSJSONObject).then((res) => {
+						const data = res as UTSJSONObject
+						this.recordCount = data.getNumber('recordCount') ?? 0
+						if (this.pageNum == 1) {
+							this.instances = [] as UTSJSONObject[]
+						}
+						const rows = data.getArray('rows')
+						if (rows != null) {
+							for (let i = 0; i < rows.length; i++) {
+								this.instances.push(rows[i] as UTSJSONObject)
+							}
+						}
+						if (this.pageNum == 1) {
+							this.loadFailed = false
+						}
+						resolve(true)
+					}).catch((err) => {
+						const msg = this.$strUtil.anyToStr(err)
+						if (msg == ERR_AUTH_REDIRECT) {
+							// 拦截器已清登录态并跳登录页，这里不再 toast / 兜底
+						} else if (this.pageNum == 1 && this.instances.length == 0) {
+							// 首屏失败：可重试错误态（不再是 toast + 裸空态）
+							this.loadFailed = true
+						} else {
+							// 翻页/下拉失败且已有数据：toast 即可
+							uni.showToast({ title: msg, icon: 'none' })
+						}
+						reject(err)
+					}).finally(() => {
+						this.loading = false
+					})
+				})
+			},
+			loadUsers() {
+				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
+				userSelectRows().then((rows) => {
+					this.users = [] as UTSJSONObject[]
+					for (let i = 0; i < rows.length; i++) {
+						this.users.push(rows[i])
+					}
+				}).catch((_e) => {
+					// 用户列表仅「抄送给」用：失败静默，操作时会提示「用户列表加载中」并可重拉
+				})
+			},
+			onTapItem(item: UTSJSONObject) {
+				const id = item.getString('id') ?? ''
+				uni.navigateTo({
+					url: '/pages/workflow/instance-detail?instanceId=' + id
+				})
+			},
+			onWithdraw(item: UTSJSONObject) {
+				if (this.acting || !this.canWithdraw(item)) {
+					return
+				}
+				const id = item.getString('id') ?? ''
+				if (id.length == 0) {
+					return
+				}
+				uni.showModal({
+					title: '撤回流程',
+					content: '撤回后流程作废且不可恢复，确定撤回？',
+					success: (res: ShowModalSuccess) => {
+						if (!res.confirm) return
+						this.acting = true
+						uni.showLoading({ title: '撤回中……', mask: true })
+						processInstanceWithdraw(id).then((_r) => {
+							uni.hideLoading()
+							uni.showToast({ title: '已撤回', icon: 'success' })
+							this.reload()
+						}).catch((err) => {
+							uni.hideLoading()
+							uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+						}).finally(() => {
+							this.acting = false
+						})
+					}
+				})
+			},
+			onCreateCc(item: UTSJSONObject) {
+				if (this.acting) {
+					return
+				}
+				const instanceId = item.getString('id') ?? ''
+				if (instanceId.length == 0) {
+					return
+				}
+				if (this.users.length == 0) {
+					uni.showToast({ title: '用户列表加载中，请稍后', icon: 'none' })
+					this.loadUsers()
+					return
+				}
+				const names: string[] = []
+				for (let i = 0; i < this.users.length; i++) {
+					names.push(this.users[i].getString('label') ?? '')
+				}
+				const self = this
+				uni.showActionSheet({
+					title: '抄送给',
+					itemList: names,
+					success: (res: ShowActionSheetSuccess) => {
+						if (res.tapIndex == null) return
+						const idx = parseInt(res.tapIndex.toString())
+						if (idx < 0 || idx >= self.users.length) return
+						const actorId = self.users[idx].getString('value') ?? ''
+						const actorName = self.users[idx].getString('label') ?? ''
+						if (actorId.length == 0) return
+						self.acting = true
+						uni.showLoading({ title: '抄送中……', mask: true })
+						const actorIds: string[] = []
+						actorIds.push(actorId)
+						processInstanceCreateCc({
+							processInstanceId: instanceId,
+							actorIds: actorIds
+						} as UTSJSONObject).then((_r) => {
+							uni.hideLoading()
+							uni.showToast({ title: '已抄送给 ' + actorName, icon: 'success' })
+						}).catch((err) => {
+							uni.hideLoading()
+							uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
+						}).finally(() => {
+							self.acting = false
+						})
+					}
+				})
+			},
+			onRestart(item: UTSJSONObject) {
+				if (!this.canRestart(item)) {
+					return
+				}
+				const defineId = item.getString('processDefineId') ?? ''
+				if (defineId.length == 0) {
+					uni.showToast({ title: '缺少流程定义', icon: 'none' })
+					return
+				}
+				// page 行无 formData，从表单字段在 variable 的 f_* 回填（对齐 vben 重新发起）
+				const prefill = {} as UTSJSONObject
+				const fd = item.getJSON('formData')
+				if (fd != null) {
+					fd!.toMap().forEach((value, key) => {
+						prefill[key] = value
+					})
+				} else {
+					const variable = item.getJSON('variable')
+					if (variable != null) {
+						variable!.toMap().forEach((value, key) => {
+							if (key.startsWith('f_')) {
+								prefill[key] = value
+							}
+						})
+					}
+				}
+				uni.setStorageSync('pages:workflow:start-form:prefill', JSON.stringify(prefill))
+				uni.navigateTo({
+					url: '/pages/workflow/start-form?defineId=' + defineId
+				})
+			}
+		}
+	}
+</script>
+<style lang="less">
+.m-inst-list{
+	padding: 20rpx;
+	.m-inst-card{
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin-bottom: 20rpx;
+		overflow: hidden;
+	}
+	.m-inst-item{
+		flex-direction: row;
+		align-items: center;
+		padding: 28rpx 24rpx 16rpx 24rpx;
+		.m-inst-info{
+			flex: 1;
+			.m-inst-title-row{
+				flex-direction: row;
+				align-items: center;
+				justify-content: space-between;
+				.m-inst-name{
+					font-size: 30rpx;
+					font-weight: bold;
+					color: #333333;
+					flex: 1;
+					margin-right: 12rpx;
+				}
+				.m-inst-state{
+					font-size: 22rpx;
+					padding: 2rpx 12rpx;
+					border-radius: 8rpx;
+					border-width: 1rpx;
+					border-style: solid;
+				}
+			}
+			.m-inst-meta{
+				margin-top: 8rpx;
+				font-size: 22rpx;
+				color: #999999;
+			}
+		}
+	}
+	.m-inst-actions{
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+		padding: 8rpx 16rpx 20rpx 16rpx;
+		border-top: 1rpx solid #F5F5F5;
+		.m-act{
+			font-size: 26rpx;
+			color: #2563EB;
+			padding: 12rpx 16rpx;
+		}
+		.m-act-muted{
+			color: #666666;
+		}
+		.m-act-danger{
+			color: #EF4444;
+		}
+		.m-act-primary{
+			color: #2563EB;
+			font-weight: bold;
+		}
+	}
+	.m-list-footer{
+		justify-content: center;
+		align-items: center;
+		padding: 20rpx;
+		.m-list-footer-text{
+			font-size: 24rpx;
+			color: #BBBBBB;
+		}
+	}
+}
+.m-load-error{
+	justify-content: center;
+	align-items: center;
+	padding: 80rpx 20rpx;
+	.m-load-error-text{
+		font-size: 26rpx;
+		color: #EF4444;
+	}
+}
+</style>

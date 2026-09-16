@@ -1,0 +1,56 @@
+<template>
+	<uni-icons :type="type" v-if="unicode==''" :color="color" :size="size"></uni-icons>
+	<uni-icons v-else :color="color" :size="size" :font-family="fontFamily">
+		{{unicode}}
+	</uni-icons>
+</template>
+
+<script>
+	// 组件处理逻辑：优先使用自定义图标，如果找不到，就使用uni-icons默认图标
+	import { getIconMap } from './index.uts'
+	export default {
+		name:"m-icon",
+		props: {
+		  type: {
+		    type: String,
+		    default: ''
+		  },
+		  color: {
+		    type: String,
+		    default: '#333333'
+		  },
+		  size: {
+		    type: [Number, String],
+		    default: 16
+		  },
+		  fontFamily: {
+		    type: String,
+		    default: 'CustomFont'
+		  }
+		},
+		data() {
+			return {
+				iconMap: new Map<String,String>()
+			};
+		},
+		computed:{
+			unicode:():String=>{
+				const str = this.iconMap.get(this.type)
+				if(str!=null) {
+					return str.toString();
+				}
+				return ''
+			}
+		},
+		created() {
+			this.iconMap = getIconMap()
+		}
+	}
+</script>
+
+<style lang="scss">
+@font-face {
+	font-family: CustomFont;
+	src: url('./static/fonts/iconfont.ttf');
+}
+</style>

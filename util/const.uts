@@ -1,0 +1,58 @@
+// 登录态
+export const IS_LOGIN_KEY: string = "user:is_login"
+export const TOKEY_KEY = "user:token"
+// UC-0113 refreshToken（与 access 同对签发，登录时保存，静默续命用）
+export const REFRESH_TOKEN_KEY = "user:refresh_token"
+export const USER_INFO_KEY = "user:info"
+
+// 业务成功码（mldong 契约：{code,msg,data}，成功 code===0）
+export const SUCCESS_CODE = 0;
+// token 无效（先走静默续命，续命失败才跳登录）、无权限（提示文案即可）
+export const TOKEN_INVALID_CODE = 99990403;
+// refresh 失效/重放（全量轮转防护，统一 99990410 → 回登录页）
+export const REFRESH_INVALID_CODE = 99990410;
+
+// UC-0113 refreshToken 换新端点（白名单公开端点，POST {refreshToken} → data{token,refreshToken}）
+export const REFRESH_TOKEN_PATH = "/sys/refreshToken";
+
+// 接口地址热切换（storage: app:base_url）
+// 默认 pro 线上；开发联调其它后端用「手输地址」（内网多栈预设档位不入开源仓，本机自留）
+export const BASE_URL: string = "https://jeeflow-pro.mldong.com/api";
+export const SELECT_URL_KEY = "app:base_url";
+export const SELECT_URL_VALUE = [
+	"https://jeeflow-pro.mldong.com/api",
+	'手输地址'
+];
+export const SELECT_URL_LABEL = [
+	"pro 线上 jeeflow-pro",
+	"手输地址"
+]
+
+// 环境区分（uni-app x 官方仅两态，编译期静态替换，见 doc「编译运行环境」）：
+// 「运行」（HBuilderX/cli launch，含自定义调试基座）= development：开放接口地址热切换（手输，联调用）
+// 「发行」（云打包/本地正式包）= production：锁定 BASE_URL，切换入口不显示，storage 旧档位也不生效
+// 注意：uni-app x 不支持自定义环境变量（.env/package.json env），测试环境多档位只能在 development 内做
+export const IS_DEV: boolean = process.env.NODE_ENV == 'development'
+
+// 当前生效接口地址：production 直接锁 pro；development 才认设备级档位（app:base_url）
+export const resolveBaseUrl = (): string => {
+	if (!IS_DEV) {
+		return BASE_URL
+	}
+	const stored = uni.getStorageSync(SELECT_URL_KEY)
+	if (typeof stored === 'string') {
+		const s = stored as string
+		if (s.length > 0) {
+			return s
+		}
+	}
+	return BASE_URL
+}
+
+// 工作流域单入口前缀（POST /wf/{action}）
+export const WF_FACADE_PREFIX = "/wf/"
+
+// 消息未读数缓存（tab 角标）
+export const UNREAD_MSG_KEY = "app:unread:msg"
+// 待办数缓存（工作台/审批角标）
+export const UNREAD_TODO_KEY = "app:unread:todo"

@@ -1,0 +1,27 @@
+import { http, HttpConfig } from '@/util/http.uts'
+
+/**
+ * 站内信（消息中心，M3 消费）
+ */
+// 消息分页 {pageNum,pageSize}
+export const messagePage = (param: UTSJSONObject): Promise<any> => {
+	return http.post("/sys/message/page", {
+		data: param
+	} as HttpConfig)
+}
+// 消息详情 {id}
+export const messageDetail = (id: string): Promise<any> => {
+	return http.post("/sys/message/detail", {
+		data: { id: id } as UTSJSONObject
+	} as HttpConfig)
+}
+// 批量标记已读 {ids: string[]}
+export const messageSetRead = (ids: string[]): Promise<any> => {
+	return http.post("/sys/message/setRead", {
+		data: { ids: ids } as UTSJSONObject
+	} as HttpConfig)
+}
+// 未读消息数 → number
+export const messageUnreadCount = (): Promise<any> => {
+	return http.post("/sys/message/getUnreadCount")
+}

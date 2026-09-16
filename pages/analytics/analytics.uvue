@@ -1,0 +1,498 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="false">
+			<template #title>
+				<text class="m-nav-title">统计分析</text>
+			</template>
+		</m-navigation-bar>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered" @refresherrefresh="handleRefresherrefresh">
+		<!-- #endif -->
+			<!-- 指标卡区：6 张 + 质量行 -->
+			<view class="m-stats-grid">
+				<view class="m-stats-card">
+					<text class="m-stats-card-num">{{overview.getNumber('total') ?? 0}}</text>
+					<text class="m-stats-card-label">总量</text>
+				</view>
+				<view class="m-stats-card">
+					<text class="m-stats-card-num" style="color: #2563EB;">{{overview.getNumber('inProgress') ?? 0}}</text>
+					<text class="m-stats-card-label">在办</text>
+				</view>
+				<view class="m-stats-card">
+					<text class="m-stats-card-num" style="color: #16A34A;">{{overview.getNumber('completed') ?? 0}}</text>
+					<text class="m-stats-card-label">已完成</text>
+				</view>
+				<view class="m-stats-card">
+					<text class="m-stats-card-num" style="color: #EF4444;">{{overview.getNumber('rejected') ?? 0}}</text>
+					<text class="m-stats-card-label">已拒绝</text>
+				</view>
+				<view class="m-stats-card">
+					<text class="m-stats-card-num">{{overview.getNumber('todayNew') ?? 0}}</text>
+					<text class="m-stats-card-label">今日新增</text>
+				</view>
+				<view class="m-stats-card">
+					<text class="m-stats-card-num" style="color: #F59E0B;">{{overview.getNumber('pendingTaskCount') ?? 0}}</text>
+					<text class="m-stats-card-label">在办任务</text>
+				</view>
+			</view>
+			<view class="m-quality-row">
+				<text class="m-quality-item">逾期 {{fmtOverdue()}}</text>
+				<text class="m-quality-dot"></text>
+				<text class="m-quality-item">均办结 {{fmtHours()}}</text>
+				<text class="m-quality-dot"></text>
+				<text class="m-quality-item">驳回 {{fmtPct(overview.getNumber('rejectRate'))}}%</text>
+				<text class="m-quality-dot"></text>
+				<text class="m-quality-item">会签 {{fmtPct(overview.getNumber('countersignRate'))}}%</text>
+				<text class="m-quality-dot"></text>
+				<text class="m-quality-item">及时 {{fmtOnTime()}}</text>
+			</view>
+
+			<!-- 趋势区 -->
+			<view class="m-section">
+				<view class="m-section-title">
+					<text class="m-section-title-text">趋势</text>
+				</view>
+				<!-- 文字色用内联 :style：uni-app x 运行时按祖先类名子串匹配嵌套选择器上下文，
+				     `.m-seg-item--active` 含子串 `m-seg-item` 会把 active 白色泄漏到未选项（2026-09-03 真机像素实证），
+				     内联样式直接设视图属性不走 class 级联，最稳（同 m-bar-list 先例） -->
+				<view class="m-seg">
+					<view class="m-seg-item" :class="trendRange == '7d' ? 'm-seg-item--active' : ''" @tap="switchTrend('7d')">
+						<text class="m-seg-text" :style="{color: trendRange == '7d' ? '#ffffff' : '#666666', fontWeight: trendRange == '7d' ? 500 : 400}">近7天</text>
+					</view>
+					<view class="m-seg-item" :class="trendRange == '30d' ? 'm-seg-item--active' : ''" @tap="switchTrend('30d')">
+						<text class="m-seg-text" :style="{color: trendRange == '30d' ? '#ffffff' : '#666666', fontWeight: trendRange == '30d' ? 500 : 400}">近30天</text>
+					</view>
+					<view class="m-seg-item" :class="trendRange == '12m' ? 'm-seg-item--active' : ''" @tap="switchTrend('12m')">
+						<text class="m-seg-text" :style="{color: trendRange == '12m' ? '#ffffff' : '#666666', fontWeight: trendRange == '12m' ? 500 : 400}">近12月</text>
+					</view>
+				</view>
+				<view v-if="loading" class="m-empty-hint">
+					<text class="m-empty-hint-text">加载中...</text>
+				</view>
+				<m-mini-bars v-else :buckets="trendBuckets" :barWidth="trendBarWidth" legendA="发起" legendB="办结"></m-mini-bars>
+			</view>
+
+			<!-- 状态分布 -->
+			<view class="m-section">
+				<view class="m-section-title">
+					<text class="m-section-title-text">状态分布</text>
+				</view>
+				<view v-if="loading" class="m-empty-hint">
+					<text class="m-empty-hint-text">加载中...</text>
+				</view>
+				<view v-else-if="stateRows.length == 0" class="m-empty-hint">
+					<text class="m-empty-hint-text">暂无数据</text>
+				</view>
+				<m-bar-list v-else :rows="stateRows"></m-bar-list>
+			</view>
+
+			<!-- 流程 Top 10 -->
+			<view class="m-section">
+				<view class="m-section-title">
+					<text class="m-section-title-text">流程 Top 10</text>
+				</view>
+				<view v-if="loading" class="m-empty-hint">
+					<text class="m-empty-hint-text">加载中...</text>
+				</view>
+				<view v-else-if="defineRows.length == 0" class="m-empty-hint">
+					<text class="m-empty-hint-text">暂无数据</text>
+				</view>
+				<m-bar-list v-else :rows="defineRows"></m-bar-list>
+			</view>
+
+			<!-- 当前积压 -->
+			<view class="m-section">
+				<view class="m-section-title">
+					<text class="m-section-title-text">当前积压</text>
+				</view>
+				<view v-if="loading" class="m-empty-hint">
+					<text class="m-empty-hint-text">加载中...</text>
+				</view>
+				<template v-else>
+					<m-bar-list :rows="stuckNodeRows" title="卡最多的节点" unit="条"></m-bar-list>
+					<view style="height: 24rpx;"></view>
+					<m-bar-list :rows="stuckApproverRows" title="卡最多的人" unit="条"></m-bar-list>
+				</template>
+			</view>
+
+			<view style="height: 24rpx;"></view>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+	</view>
+</template>
+
+<script lang="uts">
+	// 真实接口（spec 06 §4.2 三 stats action，登录放行无权限码）
+	import { statsOverview, statsTrend, statsGroup } from '@/api/stats.uts'
+	import { userSelect } from '@/api/user.uts'
+
+	const STATE_LABEL: UTSJSONObject = {
+		'10': '审批中',
+		'20': '已完成',
+		'30': '已撤回',
+		'40': '已中断',
+		'45': '已拒绝',
+		'50': '待提交',
+		'99': '已废弃'
+	} as UTSJSONObject
+
+	export default {
+		data() {
+			return {
+				refresherTriggered: false,
+				loading: true,
+				trendRange: '7d',
+				overview: {} as UTSJSONObject,
+				trendBuckets: [] as UTSJSONObject[],
+				stateRows: [] as UTSJSONObject[],
+				defineRows: [] as UTSJSONObject[],
+				stuckNodeRows: [] as UTSJSONObject[],
+				stuckApproverRows: [] as UTSJSONObject[],
+				pendingCount: 6,
+				// 用户 id→姓名映射（stuckApprover 等维度的 key 是雪花 id、后端 label 恒空，
+				// 契约 12 §3：前端查用户表；无权限/失败静默降级显示 id）
+				userMap: {} as UTSJSONObject
+			};
+		},
+		onShow() {
+			this.loading = true
+			this.loadUserMap()
+			this.loadOverview()
+			this.loadTrend()
+			this.loadGroupState()
+			this.loadGroupDefine()
+			this.loadGroupStuckNode()
+			this.loadGroupStuckApprover()
+		},
+		computed: {
+			trendBarWidth(): number {
+				if (this.trendRange == '30d') return 6
+				return 14
+			}
+		},
+		methods: {
+			pad2(n: number): string {
+				const s = n.toString()
+				if (s.length < 2) return '0' + s
+				return s
+			},
+			fmtDT(d: Date): string {
+				return d.getFullYear().toString() + '-' + this.pad2(d.getMonth() + 1) + '-' + this.pad2(d.getDate())
+					+ ' ' + this.pad2(d.getHours()) + ':' + this.pad2(d.getMinutes()) + ':' + this.pad2(d.getSeconds())
+			},
+			// trend 的 start/end 是必填（spec 06），按分段算时间窗；月窗从 11 个月前当月 1 号起（跨年由 Date 构造器处理）
+			trendWindow(): UTSJSONObject {
+				const now = new Date()
+				const end = this.fmtDT(now)
+				let start: string
+				let granularity = 'day'
+				if (this.trendRange == '12m') {
+					granularity = 'month'
+					const begin = new Date(now.getFullYear(), now.getMonth() - 11, 1, 0, 0, 0)
+					start = this.fmtDT(begin)
+				} else if (this.trendRange == '30d') {
+					const begin = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0)
+					start = this.fmtDT(begin)
+				} else {
+					const begin = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0)
+					start = this.fmtDT(begin)
+				}
+				return { start: start, end: end, granularity: granularity } as UTSJSONObject
+			},
+			// goframe 后端 decimal 序列化成字符串（"0.1481"），getNumber 拿 null——兼容解析
+			numOf(obj: UTSJSONObject, key: string): number | null {
+				const n = obj.getNumber(key)
+				if (n != null) return n
+				const s = obj.getString(key)
+				if (s != null && s.length > 0) {
+					const v = parseFloat(s)
+					if (!isNaN(v)) return v
+				}
+				return null
+			},
+			// group 行通用规整：label 后端可能为 null（stuckNode 的 key 即节点名、approver 系 key 是用户 id）
+			mapRow(item: UTSJSONObject, resolveName: boolean): UTSJSONObject {
+				const key = item.getString('key') ?? ''
+				let label = item.getString('label') ?? ''
+				if (label.length == 0 && resolveName) {
+					const n = this.userMap.getString(key) ?? ''
+					if (n.length > 0) label = n
+				}
+				if (label.length == 0) {
+					label = key
+				}
+				const row = {
+					key: key,
+					label: label,
+					count: item.getNumber('count') ?? 0
+				} as UTSJSONObject
+				// avgDurationSeconds 后端可能为 null（如 state/stuckNode 维度），非空才带，UTS 字面量不放 null
+				const avg = item.getNumber('avgDurationSeconds')
+				if (avg != null) {
+					row['avgDurationSeconds'] = avg
+				}
+				return row
+			},
+			stateLabel(key: string): string {
+				const label = STATE_LABEL.getString(key)
+				if (label != null) {
+					return label
+				}
+				return '状态' + key
+			},
+			fmtHours(): string {
+				const sec = this.overview.getNumber('avgDurationSeconds') ?? 0
+				if (sec == 0) return '--'
+				const h = (sec / 3600.0).toFixed(1)
+				return h + '小时'
+			},
+			fmtPct(rate: number | null): string {
+				if (rate == null) return '--'
+				return (rate * 100).toFixed(1)
+			},
+			fmtOverdue(): string {
+				const n = this.overview.getNumber('overdueTaskCount')
+				if (n == null) return '--'
+				return n.toString()
+			},
+			fmtOnTime(): string {
+				const rate = this.numOf(this.overview, 'onTimeRate')
+				const overdue = this.overview.getNumber('overdueTaskCount') ?? 0
+				if (overdue == 0 && (rate == null || rate == 0)) return '--'
+				if (rate == null) return '--'
+				return (rate * 100).toFixed(1) + '%'
+			},
+			switchTrend(range: string) {
+				this.trendRange = range
+				this.loadTrend()
+			},
+			loadUserMap() {
+				userSelect({ pageNum: 1, pageSize: 200 } as UTSJSONObject).then((res) => {
+					let rows = res as UTSJSONObject[]
+					if (rows == null) {
+						return
+					}
+					const map = {} as UTSJSONObject
+					for (let i = 0; i < rows.length; i++) {
+						const id = rows[i].getString('value') ?? ''
+						const name = rows[i].getString('label') ?? ''
+						if (id.length > 0 && name.length > 0) {
+							map[id] = name
+						}
+					}
+					this.userMap = map
+				}).catch((_e) => {
+					// 查不到用户表就显示 id，不阻塞页面
+				})
+			},
+			loadOverview() {
+				statsOverview({} as UTSJSONObject).then((res) => {
+					this.overview = res as UTSJSONObject
+					// 字符串 rate 原地回填为数值，模板 getNumber 才能取到
+					const rr = this.numOf(this.overview, 'rejectRate')
+					if (rr != null) this.overview['rejectRate'] = rr
+					const cr = this.numOf(this.overview, 'countersignRate')
+					if (cr != null) this.overview['countersignRate'] = cr
+				}).catch((_e) => {}).finally(() => {
+					this.checkLoadingDone()
+				})
+			},
+			loadTrend() {
+				statsTrend(this.trendWindow()).then((res) => {
+					const arr = res as UTSJSONObject[]
+					const out: UTSJSONObject[] = []
+					if (arr != null) {
+						for (let i = 0; i < arr.length; i++) {
+							const item = arr[i]
+							out.push({
+								label: item.getString('bucket') ?? '',
+								a: item.getNumber('started') ?? 0,
+								b: item.getNumber('finished') ?? 0
+							} as UTSJSONObject)
+						}
+					}
+					this.trendBuckets = out
+				}).catch((_e) => {}).finally(() => {
+					this.checkLoadingDone()
+				})
+			},
+			loadGroupState() {
+				statsGroup({ dimension: 'state' } as UTSJSONObject).then((res) => {
+					const arr = res as UTSJSONObject[]
+					const out: UTSJSONObject[] = []
+					if (arr != null) {
+						for (let i = 0; i < arr.length; i++) {
+							const item = arr[i]
+							const key = item.getString('key') ?? ''
+							out.push({
+								label: this.stateLabel(key),
+								count: item.getNumber('count') ?? 0
+							} as UTSJSONObject)
+						}
+					}
+					this.stateRows = out
+				}).catch((_e) => {}).finally(() => {
+					this.checkLoadingDone()
+				})
+			},
+			loadGroupDefine() {
+				statsGroup({ dimension: 'define' } as UTSJSONObject).then((res) => {
+					const arr = res as UTSJSONObject[]
+					const out: UTSJSONObject[] = []
+					if (arr != null) {
+						for (let i = 0; i < arr.length; i++) {
+							out.push(this.mapRow(arr[i], false))
+						}
+					}
+					this.defineRows = out
+				}).catch((_e) => {}).finally(() => {
+					this.checkLoadingDone()
+				})
+			},
+			loadGroupStuckNode() {
+				statsGroup({ dimension: 'stuckNode' } as UTSJSONObject).then((res) => {
+					const arr = res as UTSJSONObject[]
+					const out: UTSJSONObject[] = []
+					if (arr != null) {
+						for (let i = 0; i < arr.length; i++) {
+							out.push(this.mapRow(arr[i], false))
+						}
+					}
+					this.stuckNodeRows = out
+				}).catch((_e) => {}).finally(() => {
+					this.checkLoadingDone()
+				})
+			},
+			loadGroupStuckApprover() {
+				statsGroup({ dimension: 'stuckApprover' } as UTSJSONObject).then((res) => {
+					const arr = res as UTSJSONObject[]
+					const out: UTSJSONObject[] = []
+					if (arr != null) {
+						for (let i = 0; i < arr.length; i++) {
+							out.push(this.mapRow(arr[i], true))
+						}
+					}
+					this.stuckApproverRows = out
+				}).catch((_e) => {}).finally(() => {
+					this.checkLoadingDone()
+				})
+			},
+			checkLoadingDone() {
+				this.pendingCount--
+				if (this.pendingCount <= 0) {
+					this.loading = false
+				}
+			},
+			handleRefresherrefresh() {
+				this.refresherTriggered = true
+				this.pendingCount = 6
+				this.loading = true
+				this.loadUserMap()
+				this.loadOverview()
+				this.loadTrend()
+				this.loadGroupState()
+				this.loadGroupDefine()
+				this.loadGroupStuckNode()
+				this.loadGroupStuckApprover()
+				setTimeout(() => {
+					this.refresherTriggered = false
+				}, 800)
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.m-stats-grid{
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin: 20rpx 20rpx 0 20rpx;
+	.m-stats-card{
+		width: 48%;
+		align-items: center;
+		padding: 28rpx 16rpx;
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+		margin: 0 1% 16rpx 1%;
+		.m-stats-card-num{
+			font-size: 48rpx;
+			font-weight: bold;
+			color: #333333;
+		}
+		.m-stats-card-label{
+			font-size: 24rpx;
+			color: #666666;
+			margin-top: 8rpx;
+		}
+	}
+}
+.m-quality-row{
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: center;
+	margin: 0 20rpx 16rpx 20rpx;
+	padding: 16rpx 20rpx;
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	.m-quality-item{
+		font-size: 20rpx;
+		color: #666666;
+	}
+	.m-quality-dot{
+		width: 6rpx;
+		height: 6rpx;
+		border-radius: 3rpx;
+		background-color: #DDDDDD;
+		margin: 0 16rpx;
+	}
+}
+.m-section{
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	margin: 0 20rpx 20rpx 20rpx;
+	padding: 24rpx;
+	.m-section-title{
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 16rpx;
+		.m-section-title-text{
+			font-size: 30rpx;
+			font-weight: bold;
+			color: #333333;
+		}
+	}
+}
+.m-seg{
+	flex-direction: row;
+	margin-bottom: 20rpx;
+	background-color: #F0F2F5;
+	border-radius: 16rpx;
+	padding: 6rpx;
+	.m-seg-item{
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		padding: 14rpx 0;
+		border-radius: 12rpx;
+		.m-seg-text{
+			font-size: 26rpx;
+			color: #666666;
+		}
+	}
+	.m-seg-item--active{
+		/* 文字色/字重走模板内联 :style（见模板注释）；此处只管容器底色与阴影 */
+		background-color: #2563EB;
+		box-shadow: 0 2rpx 8rpx rgba(37, 99, 235, 0.3);
+	}
+}
+.m-empty-hint{
+	padding: 24rpx 0 12rpx 0;
+	align-items: center;
+	.m-empty-hint-text{
+		font-size: 24rpx;
+		color: #BBBBBB;
+	}
+}
+</style>

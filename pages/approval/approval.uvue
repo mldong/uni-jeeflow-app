@@ -1,0 +1,432 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="false">
+			<template #title>
+				<text class="m-nav-title">审批中心</text>
+			</template>
+		</m-navigation-bar>
+		<!-- 三段式：待办 / 已办 / 抄送 -->
+		<view class="m-seg-row">
+			<view v-for="(seg, index) in segs" :key="index" class="m-seg" :class="currentTab == index ? 'm-seg-active' : ''" @tap="onSegTap(index)">
+				<text :class="currentTab == index ? 'm-seg-text-active' : 'm-seg-text'">{{seg}}</text>
+			</view>
+		</view>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+			@refresherrefresh="handleRefresherrefresh" @scrolltolower="loadMore">
+		<!-- #endif -->
+			<!-- 待办列表 -->
+			<template v-if="currentTab == 0">
+				<view class="m-task-list" v-if="todoList.length > 0">
+					<view class="m-task-item" v-for="(item, index) in todoList" :key="index" @tap="onTapTodo(item)">
+						<view class="m-task-badge"></view>
+						<view class="m-task-info">
+							<text class="m-task-name">{{item.getString('displayName') ?? ''}}</text>
+							<text class="m-task-meta">{{item.getString('processDefineDisplayName') ?? ''}} · {{applicantName(item)}} · {{fmtRelTime(item.getString('createTime') ?? '')}}</text>
+						</view>
+						<m-icon type="right" :size="20" color="#C8C8C8"></m-icon>
+					</view>
+					<view class="m-list-footer" v-if="todoList.length >= todoCount">
+						<text class="m-list-footer-text">没有更多了</text>
+					</view>
+				</view>
+				<view v-else-if="loadFailed[currentTab]" class="m-load-error" @tap="retryTab">
+					<text class="m-load-error-text">加载失败，点击重试</text>
+				</view>
+				<m-empty-data v-else></m-empty-data>
+			</template>
+			<!-- 已办列表 -->
+			<template v-else-if="currentTab == 1">
+				<view class="m-task-list" v-if="doneList.length > 0">
+					<view class="m-task-item" v-for="(item, index) in doneList" :key="index" @tap="onTapDone(item)">
+						<view class="m-task-badge m-task-badge-done"></view>
+						<view class="m-task-info">
+						<text class="m-task-name">{{item.getString('displayName') ?? ''}}</text>
+						<text class="m-task-meta">{{item.getString('processDefineDisplayName') ?? ''}} · {{applicantName(item)}} · {{fmtTime(item.getString('finishTime') ?? '')}}</text>
+						</view>
+						<m-icon type="right" :size="20" color="#C8C8C8"></m-icon>
+					</view>
+					<view class="m-list-footer" v-if="doneList.length >= doneCount">
+						<text class="m-list-footer-text">没有更多了</text>
+					</view>
+				</view>
+				<view v-else-if="loadFailed[currentTab]" class="m-load-error" @tap="retryTab">
+					<text class="m-load-error-text">加载失败，点击重试</text>
+				</view>
+				<m-empty-data v-else></m-empty-data>
+			</template>
+			<!-- 抄送列表 -->
+			<template v-else>
+				<view class="m-task-list" v-if="ccList.length > 0">
+					<view class="m-task-item" v-for="(item, index) in ccList" :key="index" @tap="onTapCc(item)">
+						<view class="m-task-badge m-task-badge-cc"></view>
+						<view class="m-task-info">
+							<text class="m-task-name">{{item.getString('displayName') ?? ''}}</text>
+							<text class="m-task-meta">{{item.getString('processDefineDisplayName') ?? ''}} · {{applicantName(item)}} · {{fmtTime(item.getString('createTime') ?? '')}}</text>
+						</view>
+						<text class="m-cc-flag" v-if="(item.getNumber('ccStatus') ?? 0) == 1">NEW</text>
+					</view>
+					<view class="m-list-footer" v-if="ccList.length >= ccCount">
+						<text class="m-list-footer-text">没有更多了</text>
+					</view>
+				</view>
+				<view v-else-if="loadFailed[currentTab]" class="m-load-error" @tap="retryTab">
+					<text class="m-load-error-text">加载失败，点击重试</text>
+				</view>
+				<m-empty-data v-else></m-empty-data>
+			</template>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+	</view>
+</template>
+<script lang="uts">
+	import { processTaskTodoList, processTaskDoneList, processInstanceCcList, processInstanceUpdateCCStatus } from '@/api/workflow.uts'
+	import { applyTodoBadge, refreshTabBadges } from '@/util/badge.uts'
+	import { ERR_AUTH_REDIRECT } from '@/util/http.uts'
+
+	export default {
+		data() {
+			return {
+				currentTab: 0,
+				segs: ['待办', '已办', '抄送'],
+				pageNum: 1,
+				pageSize: 10,
+				todoCount: 0,
+				doneCount: 0,
+				ccCount: 0,
+				todoList: [] as UTSJSONObject[],
+				doneList: [] as UTSJSONObject[],
+				ccList: [] as UTSJSONObject[],
+				refresherTriggered: false,
+				loading: false,
+				loaded: [false, false, false],
+				// 各段首屏加载失败标记：true 显示可重试错误态而非「暂无数据」
+				loadFailed: [false, false, false] as boolean[]
+			};
+		},
+	onShow() {
+		const tabRaw = uni.getStorageSync('pages:approval:tab')
+			if (tabRaw != null && tabRaw !== '') {
+				uni.removeStorageSync('pages:approval:tab')
+				const tab = parseInt(tabRaw.toString())
+				if (!isNaN(tab) && tab >= 0 && tab <= 2 && tab != this.currentTab) {
+					this.currentTab = tab
+					this.pageNum = 1
+					this.requestData()
+					return
+				}
+			}
+			const needRefresh = uni.getStorageSync('pages:approval:approval:refresh') == true
+			if (needRefresh) {
+				uni.removeStorageSync('pages:approval:approval:refresh')
+			}
+			// 待办：有刷新标记或未加载过；其余段：未加载过才拉
+			if (needRefresh || !this.loaded[0]) {
+				this.pageNum = 1
+				this.requestData()
+			} else {
+				refreshTabBadges()
+			}
+		},
+		methods: {
+			fmtTime(iso: string): string {
+				if (iso.length == 0) {
+					return ''
+				}
+				let t = iso.replace('T', ' ')
+				const dot = t.indexOf('.')
+				if (dot > 0) {
+					t = t.substring(0, dot)
+				}
+				return t
+			},
+			// 相对时间：今天/昨天显示 HH:mm，今年内显示 MM-DD，跨年显示 yyyy-MM-DD
+			fmtRelTime(raw: string): string {
+				if (raw.length == 0) {
+					return ''
+				}
+				let t = raw.replace('T', ' ')
+				const dot = t.indexOf('.')
+				if (dot > 0) {
+					t = t.substring(0, dot)
+				}
+				// yyyy-MM-dd HH:mm(:ss)?
+				if (t.length < 16) {
+					return t
+				}
+				const now = new Date()
+				const y = parseInt(t.substring(0, 4))
+				const mo = parseInt(t.substring(5, 7))
+				const d = parseInt(t.substring(8, 10))
+				const hh = t.substring(11, 13)
+				const mm = t.substring(14, 16)
+				if (isNaN(y) || isNaN(mo) || isNaN(d)) {
+					return t
+				}
+				const then = new Date(y, mo - 1, d)
+				const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+				const dayMs = 24 * 3600 * 1000
+				const diff = (today0.getTime() - new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime()) / dayMs
+				if (diff == 0) {
+					return '今天 ' + hh + ':' + mm
+				}
+				if (diff == 1) {
+					return '昨天 ' + hh + ':' + mm
+				}
+				if (y == now.getFullYear()) {
+					return t.substring(5, 10)
+				}
+				return t.substring(0, 10)
+			},
+			// 申请人：读引擎存的 u_realName（对齐 vben 发起人列 = instanceExt.u_realName）。
+			// 待办/已办行有 instanceExt；抄送行无，回落本行 ext.u_realName
+			applicantName(item: UTSJSONObject): string {
+				const iext = item.getJSON('instanceExt')
+				if (iext != null) {
+					const rn = iext!.getString('u_realName')
+					if (rn != null && rn.length > 0) {
+						return rn!
+					}
+				}
+				const ext = item.getJSON('ext')
+				if (ext != null) {
+					const rn2 = ext!.getString('u_realName')
+					if (rn2 != null && rn2.length > 0) {
+						return rn2!
+					}
+				}
+				return ''
+			},
+			onSegTap(index: number) {
+				this.currentTab = index
+				if (!this.loaded[index]) {
+					this.pageNum = 1
+					this.requestData()
+				}
+			},
+			handleRefresherrefresh() {
+				this.refresherTriggered = true
+				this.pageNum = 1
+				this.loaded[this.currentTab] = false
+				this.requestData().finally(() => {
+					this.refresherTriggered = false
+				})
+			},
+			loadMore() {
+				if (this.loading) {
+					return
+				}
+				if (this.currentTab == 0 && this.todoList.length < this.todoCount) {
+					this.pageNum++
+					this.requestData()
+				} else if (this.currentTab == 1 && this.doneList.length < this.doneCount) {
+					this.pageNum++
+					this.requestData()
+				} else if (this.currentTab == 2 && this.ccList.length < this.ccCount) {
+					this.pageNum++
+					this.requestData()
+				}
+			},
+			requestData(): Promise<any> {
+				this.loading = true
+				const tab = this.currentTab
+				let api: Promise<any>
+				if (tab == 0) {
+					api = processTaskTodoList(this.pageParam())
+				} else if (tab == 1) {
+					api = processTaskDoneList(this.pageParam())
+				} else {
+					api = processInstanceCcList(this.pageParam())
+				}
+				return new Promise<any>((resolve, reject) => {
+					api.then((res) => {
+						const data = res as UTSJSONObject
+						const count = data.getNumber('recordCount') ?? 0
+						if (tab == 0) {
+							this.todoCount = count
+							applyTodoBadge(count)
+						} else if (tab == 1) {
+							this.doneCount = count
+						} else {
+							this.ccCount = count
+						}
+						if (this.pageNum == 1) {
+							this.clearList(tab)
+							this.loadFailed[tab] = false
+						}
+						const rows = data.getArray('rows')
+						if (rows != null) {
+							for (let i = 0; i < rows.length; i++) {
+								this.appendRow(tab, rows[i] as UTSJSONObject)
+							}
+						}
+						this.loaded[tab] = true
+						resolve(true)
+					}).catch((err) => {
+						const msg = this.$strUtil.anyToStr(err)
+						if (msg == ERR_AUTH_REDIRECT) {
+							// 拦截器已清登录态并跳登录页，这里不再 toast / 兜底
+						} else if (this.pageNum == 1 && this.listSize(tab) == 0) {
+							// 首屏失败：可重试错误态（不再是 toast + 裸空态）
+							this.loadFailed[tab] = true
+						} else {
+							// 翻页/下拉失败且已有数据：toast 即可
+							uni.showToast({ title: msg, icon: 'none' })
+						}
+						reject(err)
+					}).finally(() => {
+						this.loading = false
+					})
+				})
+			},
+			pageParam(): UTSJSONObject {
+				return {
+					pageNum: this.pageNum,
+					pageSize: this.pageSize
+				} as UTSJSONObject
+			},
+			clearList(tab: number) {
+				if (tab == 0) {
+					this.todoList = [] as UTSJSONObject[]
+				} else if (tab == 1) {
+					this.doneList = [] as UTSJSONObject[]
+				} else {
+					this.ccList = [] as UTSJSONObject[]
+				}
+			},
+			appendRow(tab: number, row: UTSJSONObject) {
+				if (tab == 0) {
+					this.todoList.push(row)
+				} else if (tab == 1) {
+					this.doneList.push(row)
+				} else {
+					this.ccList.push(row)
+				}
+			},
+			listSize(tab: number): number {
+				if (tab == 0) {
+					return this.todoList.length
+				} else if (tab == 1) {
+					return this.doneList.length
+				} else {
+					return this.ccList.length
+				}
+			},
+			retryTab() {
+				this.pageNum = 1
+				this.requestData()
+			},
+			onTapTodo(item: UTSJSONObject) {
+				uni.navigateTo({
+					url: '/pages/workflow/task-detail?taskId=' + (item.getString('id') ?? '')
+				})
+			},
+			onTapDone(item: UTSJSONObject) {
+				uni.navigateTo({
+					url: '/pages/workflow/instance-detail?instanceId=' + (item.getString('processInstanceId') ?? '')
+				})
+			},
+			onTapCc(item: UTSJSONObject) {
+				const instanceId = item.getString('processInstanceId') ?? ''
+				// 未读抄送进详情时顺带标记已读（失败不阻塞）
+				if ((item.getNumber('ccStatus') ?? 0) == 1) {
+					processInstanceUpdateCCStatus(instanceId).then((_r) => {
+						item['ccStatus'] = 0
+					}).catch((_e) => { })
+				}
+				uni.navigateTo({
+					url: '/pages/workflow/instance-detail?instanceId=' + instanceId
+				})
+			}
+		}
+	}
+</script>
+<style lang="less">
+.m-seg-row{
+	flex-direction: row;
+	background-color: #ffffff;
+	padding: 16rpx 20rpx;
+	.m-seg{
+		flex: 1;
+		height: 64rpx;
+		border-radius: 32rpx;
+		justify-content: center;
+		align-items: center;
+	}
+	.m-seg-active{
+		background-color: #2563EB;
+	}
+	.m-seg-text{
+		font-size: 28rpx;
+		color: #666666;
+	}
+	.m-seg-text-active{
+		font-size: 28rpx;
+		color: #ffffff;
+		font-weight: bold;
+	}
+}
+.m-task-list{
+	padding: 20rpx;
+	.m-task-item{
+		flex-direction: row;
+		align-items: center;
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		padding: 28rpx 24rpx;
+		margin-bottom: 20rpx;
+		.m-task-badge{
+			width: 16rpx;
+			height: 16rpx;
+			border-radius: 8rpx;
+			background-color: #F59E0B;
+		}
+		.m-task-badge-done{
+			background-color: #16A34A;
+		}
+		.m-task-badge-cc{
+			background-color: #8B5CF6;
+		}
+		.m-task-info{
+			flex: 1;
+			margin-left: 20rpx;
+			.m-task-name{
+				font-size: 30rpx;
+				font-weight: bold;
+				color: #333333;
+			}
+			.m-task-meta{
+				margin-top: 8rpx;
+				font-size: 22rpx;
+				color: #999999;
+			}
+		}
+		.m-cc-flag{
+			font-size: 20rpx;
+			color: #ffffff;
+			background-color: #8B5CF6;
+			padding: 2rpx 10rpx;
+			border-radius: 8rpx;
+		}
+	}
+	.m-list-footer{
+		justify-content: center;
+		align-items: center;
+		padding: 20rpx;
+		.m-list-footer-text{
+			font-size: 24rpx;
+			color: #BBBBBB;
+		}
+	}
+}
+.m-load-error{
+	justify-content: center;
+	align-items: center;
+	padding: 80rpx 20rpx;
+	.m-load-error-text{
+		font-size: 26rpx;
+		color: #EF4444;
+	}
+}
+</style>

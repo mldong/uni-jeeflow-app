@@ -1,0 +1,243 @@
+<template>
+	<view class="m-picker-wrap transition-height" id="pickerWrap">
+		<view class="m-picker-btn">
+			<view class="m-btn" @tap="handelPickerCancel">
+				<text class="m-btn-text" >取消</text>
+			</view>
+			<view class="m-btn" @tap="handelPickerOk">
+				<text class="m-btn-text">确定</text>
+			</view>
+		</view>
+		<picker-view @change="bindChange" class="picker-view" :value="pickerValue" :indicator-style="indicatorStyle">
+			<picker-view-column>
+				<text class="item" v-for="(item) in years" :key="item">{{item}}年</text>
+			</picker-view-column>
+			<picker-view-column>
+				<text class="item" v-for="(item) in months" :key="item">{{item<=9?'0'+item:item}}月</text>
+			</picker-view-column>
+			<picker-view-column v-if="showDay">
+				<text class="item" v-for="(item) in days" :key="item">{{item<=9?'0'+item:item}}日</text>
+			</picker-view-column>
+		</picker-view>
+	</view>
+</template>
+
+<script>
+	export default {
+		name:"m-picker-year-month",
+		props:{
+		 visible: {
+			 type: Boolean,
+			 default: false
+		 },
+		 showDay: { // 显示天
+			 type: Boolean,
+			 default: false,
+		 },
+		 choosableFutureTime: { // 可选未来时间
+			 type: Boolean,
+			 default: true
+		 },
+		 value: {
+			 type: String,
+			 default: ''
+		 }
+		},
+		emits:['update:visible', 'update:value', 'ok'],
+		data() {
+			let d = new Date();
+			let _year = d.getFullYear();
+			let _month = d.getMonth() + 1;
+			let _day = d.getDay() + 1
+			return {
+				indicatorStyle: 'height: 50px;',
+				year: _year as Number,
+				month: _month as Number,
+				day: _day as Number,
+				selectYear: _year as Number,
+				selectMonth:_month as Number,
+				selectDay: _day as Number,
+				pickerValue: [] as Array<Number>,
+				pickerWrap: null as UniElement | null,
+			};
+		},
+		computed:{
+			years:():Array<number>=>{
+				const year = new Date().getFullYear()
+				let _years:Array<number> = []
+				for(let i=year-100;i<=year+100;i++){
+					if(!this.choosableFutureTime && i>year) {
+						continue;
+					}
+					_years.push(i)
+				} 
+				return _years;
+			},
+			months:():Array<number>=>{
+				let _months:Array<number> = []
+				const year = new Date().getFullYear()
+				const month = new Date().getMonth() + 1
+				for(let i=1;i<=12;i++){
+					if(!this.choosableFutureTime && this.selectYear == year && i > month) {
+						continue;
+					}
+					_months.push(i)
+				} 
+				return _months;
+			},
+			days:():Array<number>=>{
+			  let year = this.selectYear as number
+			  let month = (this.selectMonth  as number) - 1;
+			  // 创建该月第一天的日期对象
+			  const now = new Date(year, month, 1);
+			  // 获取下个月第一天的日期对象
+			  // 如果是 12 月，则需要增加年份
+			  let nextMonth = new Date(year, month + 1, 1);
+			  // 计算两个日期之间相差的毫秒数
+			  let diff = nextMonth.getTime() - now.getTime();
+			  // 将毫秒数转换为天数
+			  // 一天有 24 * 60 * 60 * 1000 毫秒
+			  let days = Math.floor(diff / (24 * 60 * 60 * 1000));
+			  let daysArray: Array<number> = []
+			  const newYear = new Date().getFullYear()
+			  const newMonth = new Date().getMonth() + 1
+			  const newDay = new Date().getDay() + 1;
+			  // 循环从 1 到 days
+			  for (let i = 1; i <= days; i++) {
+				if(!this.choosableFutureTime && newYear==this.selectYear && newMonth == this.selectMonth && i > newDay) {
+					continue;
+				}
+				daysArray.push(i);
+			  }
+			  return daysArray
+			}
+		},
+		created(){
+			this.pickerValue = this.showDay?[100,this.month-1,this.day-1]:[100,this.month-1]
+		},
+		mounted() {
+			this.pickerWrap = uni.getElementById('pickerWrap');
+			if(this.visible) {
+				this.openPicker()
+			} else {
+				this.closePicker()
+			}
+		},
+		watch:{
+			visible(n){
+				if(n) {
+					this.openPicker()
+				} else {
+					this.closePicker()
+				}
+				this.$emit('update:visible', n)
+			},
+			value(n){
+				if(this.$strUtil.isNotEmpty(n)){
+					const arr = n.split('-')
+					if(arr.length==2){
+						this.selectYear = parseInt(arr[0])
+						this.selectMonth = parseInt(arr[1])
+					} else if(arr.length==3){
+						this.selectYear = parseInt(arr[0])
+						this.selectMonth = parseInt(arr[1])
+						this.selectDay = parseInt(arr[2])
+					}
+					const yearIndex = this.years.indexOf(this.selectYear)
+					const monthIndex = this.months.indexOf(this.selectMonth)
+					const dayIndex = this.months.indexOf(this.day)
+					if(this.showDay && yearIndex!=-1 && monthIndex!=-1 && dayIndex!=-1){
+						this.pickerValue=[yearIndex, monthIndex, dayIndex]
+					}
+					if(!this.showDay && yearIndex!=-1 && monthIndex!=-1){
+						this.pickerValue=[yearIndex, monthIndex]
+					}
+				}
+			}
+		},
+		methods:{
+			bindChange(e: UniPickerViewChangeEvent){
+				const val = e.detail.value
+				if(val.length>0) {
+					if(val[0]<this.years.length) {
+						this.selectYear = this.years[val[0]]
+					} else {
+						this.selectYear = this.years.length - 1;
+					}
+				}
+				if(val.length>1) {
+					if(val[1]<this.months.length) {
+						this.selectMonth = this.months[val[1]]
+					} else {
+						this.selectMonth = this.months.length - 1;
+					}
+				}
+				if(this.showDay && val.length>2) {
+					if(val[2]<this.days.length) {
+						this.selectDay = this.days[val[2]]
+					} else {
+						this.selectDay = this.days.length - 1;
+					}
+				} 
+			},
+			handelPickerCancel(){
+				this.visible = false;
+			},
+			handelPickerOk(){
+				this.year = this.selectYear;
+				this.month = this.selectMonth;
+				this.day = this.selectDay;
+				this.visible = false;
+				this.$emit('ok',{
+					year: this.year,
+					month: this.month,
+					day: this.day
+				})
+			},
+			openPicker(){
+				this.pickerWrap?.style?.setProperty("height", '420rpx')
+			},
+			closePicker(){
+				this.pickerWrap?.style?.setProperty("height", '0rpx')
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.m-picker-wrap {
+	position: fixed;
+	bottom: 0;
+	background-color: white;
+	height: 0rpx;
+}
+.m-picker-btn{
+	flex-direction: row;
+	justify-content: space-between;
+	.m-btn{
+		width: 88rpx;
+		height: 48rpx;
+		justify-content: center;
+		align-items: center;
+		.m-btn-text{
+			color: #2563EB;
+		}
+	}
+}
+.picker-view {
+	width: 750rpx;
+	height: 320rpx;
+	margin-top: 10rpx;
+	.item {
+		line-height: 50px;
+		text-align: center;
+		color: black;
+	}
+}
+
+.transition-height {
+  transition-property: height;
+  transition-duration: 0.6s;
+  transition-timing-function: ease-out;
+}
+</style>

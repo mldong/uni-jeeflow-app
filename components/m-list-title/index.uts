@@ -1,0 +1,9 @@
+import mListTitleUvue from "./m-list-title.uvue";
+export type ListTitleType = {
+	    key?: string;
+		title: string;
+		icon?: string;
+		iconColor?: string;
+		data?: UTSJSONObject;
+	}
+export const mListTitle = mListTitleUvue;

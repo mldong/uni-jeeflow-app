@@ -1,0 +1,17 @@
+/.hbuilderx/
+/unpackage/
+/.cursor/
+/.claude/
+/dist/
+
+# 签名证书自备，勿入库
+/certs/
+
+# 本机联调临时产物
+/_hx-launch*.log
+/_hx-launch*.log.*
+/_hx-launch.log
+/_hx-launch.log.err
+/_hx-launch.copy.log
+/_hx-launch.copy2.log
+/_test_shots/

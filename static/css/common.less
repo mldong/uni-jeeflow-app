@@ -1,0 +1,73 @@
+
+// 变量
+@import url("/static/css/variable.less");
+// 动态构造的css
+@import url('/static/css/gen.less');
+.bg-primary{
+	background-color: @primary-color;
+}
+.bg-white{
+	background-color: white;
+}
+.bg-black {
+	background-color: black;
+}
+.j-center{
+	justify-content: center;
+}
+.a-center{
+	align-items: center;
+}
+.center {
+	justify-content: center;
+	align-items: center;
+}
+.justify-content-flex-start{
+	justify-content: flex-start;
+}
+.justify-content-flex-end{
+	justify-content: flex-end;
+}
+.justify-content-flex-center{
+	justify-content: center;
+}
+.align-items-flex-start{
+	align-items: flex-start;
+}
+.align-items-flex-end{
+	align-items: flex-end;
+}
+.align-items-flex-center{
+	align-items: center;
+}
+.justify-content-space-between {
+	justify-content: space-between;
+}
+.column {
+	display: flex;
+	flex-direction: column;
+}
+.row{
+	display: flex;
+	flex-direction: row;
+}
+.fixed{
+	position: fixed;
+}
+.relative {
+	position: relative;
+}
+.absolute{
+	position: absolute;
+}
+.border-red{
+	border: 1rpx solid red;
+}
+.status-bar-height{
+	height:var(--status-bar-height)
+}// 自定义导航栏标题（蓝色导航栏配白字）
+.m-nav-title{
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}

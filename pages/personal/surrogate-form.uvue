@@ -1,0 +1,334 @@
+<template>
+	<view style="flex: 1;background-color: #F5F6FA;">
+		<m-navigation-bar :showBack="true">
+			<template #title>
+				<text class="m-nav-title">{{id.length > 0 ? '修改委托' : '新增委托'}}</text>
+			</template>
+		</m-navigation-bar>
+		<!-- #ifdef APP -->
+		<scroll-view style="flex:1;">
+		<!-- #endif -->
+			<view class="m-form-card">
+				<!-- 流程 -->
+				<view class="m-row" @tap="onPickProcess">
+					<text class="m-row-label">委托流程</text>
+					<view class="m-row-value" :style="{justifyContent: 'flex-end'}">
+						<text :class="processName == '' ? 'm-row-placeholder' : 'm-row-text'">{{processName == '' ? '全部流程' : processName}}</text>
+					</view>
+					<m-icon type="right" :size="18" color="#C8C8C8"></m-icon>
+				</view>
+				<!-- 代理人 -->
+				<view class="m-row" @tap="onPickUser">
+					<text class="m-row-label">代理人</text>
+					<view class="m-row-value" :style="{justifyContent: 'flex-end'}">
+						<text :class="surrogateId == '' ? 'm-row-placeholder' : 'm-row-text'">{{surrogateId == '' ? '请选择代理人' : userNameOf(surrogateId)}}</text>
+					</view>
+					<m-icon type="right" :size="18" color="#C8C8C8"></m-icon>
+				</view>
+				<!-- 开始日期 -->
+				<view class="m-row" @tap="openDate('start')">
+					<text class="m-row-label">开始日期</text>
+					<view class="m-row-value" :style="{justifyContent: 'flex-end'}">
+						<text :class="startDate == '' ? 'm-row-placeholder' : 'm-row-text'">{{startDate == '' ? '请选择' : startDate}}</text>
+					</view>
+					<m-icon type="calendar" :size="18" color="#C8C8C8"></m-icon>
+				</view>
+				<!-- 结束日期 -->
+				<view class="m-row" @tap="openDate('end')">
+					<text class="m-row-label">结束日期</text>
+					<view class="m-row-value" :style="{justifyContent: 'flex-end'}">
+						<text :class="endDate == '' ? 'm-row-placeholder' : 'm-row-text'">{{endDate == '' ? '请选择' : endDate}}</text>
+					</view>
+					<m-icon type="calendar" :size="18" color="#C8C8C8"></m-icon>
+				</view>
+				<!-- 启用开关 -->
+				<view class="m-row">
+					<text class="m-row-label">启用</text>
+					<view class="m-row-value" :style="{justifyContent: 'flex-end'}">
+						<switch :checked="enabled" color="#2563EB" style="transform:scale(0.8);" @change="onEnabledChange" />
+					</view>
+				</view>
+			</view>
+			<view class="m-submit-wrap">
+				<button class="m-submit-btn" type="primary" @tap="handleSave">保存</button>
+			</view>
+		<!-- #ifdef APP -->
+		</scroll-view>
+		<!-- #endif -->
+		<m-picker-year-month :showDay="true" :choosableFutureTime="true"
+			:value="datePickerValue" v-model:visible="datePickerVisible" @ok="onDateOk"></m-picker-year-month>
+	</view>
+</template>
+<script lang="uts">
+	import mPickerYearMonth from '@/components/m-picker-year-month/index.uvue'
+	import { processSurrogateDetail, processSurrogateSave, processSurrogateUpdate, processDefinePage } from '@/api/workflow.uts'
+	import { userSelectRows } from '@/api/user.uts'
+
+	export default {
+		components: {
+			mPickerYearMonth
+		},
+		data() {
+			return {
+				id: '',
+				processName: '',
+				surrogateId: '',
+				userNames: {} as UTSJSONObject,
+				startDate: '',
+				endDate: '',
+				enabled: true,
+				datePickerVisible: false,
+				datePickerValue: '',
+				datePickerTarget: 'start',
+				defines: [] as UTSJSONObject[],
+				users: [] as UTSJSONObject[],
+				saving: false
+			};
+		},
+		onLoad(options: OnLoadOptions) {
+			this.id = options['id'] ?? ''
+			this.loadUserNames()
+			this.loadDefines()
+			this.loadUsers()
+			if (this.id.length > 0) {
+				this.loadDetail()
+			}
+		},
+		methods: {
+			async loadDetail() {
+				uni.showLoading({ title: '加载中', mask: true })
+				try {
+					const res = await processSurrogateDetail(this.id)
+					const d = res as UTSJSONObject
+					if ((d.getString('id') ?? '') == '') {
+						uni.showToast({ title: '委托不存在', icon: 'none' })
+						return
+					}
+					this.processName = d.getString('processName') ?? ''
+					this.surrogateId = d.getString('surrogate') ?? ''
+					this.startDate = this.dayOf(d.getString('startTime') ?? '')
+					this.endDate = this.dayOf(d.getString('endTime') ?? '')
+					this.enabled = (d.getNumber('enabled') ?? 1) == 1
+				} catch (err) {
+					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+				} finally {
+					uni.hideLoading()
+				}
+			},
+			dayOf(iso: string): string {
+				if (iso.length == 0) {
+					return ''
+				}
+				let t = iso.replace('T', ' ')
+				const sp = t.indexOf(' ')
+				return sp > 0 ? t.substring(0, sp) : t
+			},
+			loadUserNames() {
+				const cached = uni.getStorageSync('app:user:names')
+				if (cached != null) {
+					const cs = cached.toString()
+					if (cs.length > 0) {
+						try {
+							const obj = JSON.parse(cs) as UTSJSONObject
+							if (obj != null) {
+								this.userNames = obj!
+							}
+						} catch (e) { }
+					}
+				}
+			},
+			userNameOf(id: string): string {
+				const name = this.userNames.getString(id)
+				if (name != null && name.length > 0) {
+					return name!
+				}
+				return id
+			},
+			loadDefines() {
+				processDefinePage({
+					pageNum: 1,
+					pageSize: 100
+				} as UTSJSONObject).then((res) => {
+					const data = res as UTSJSONObject
+					const rows = data.getArray('rows')
+					if (rows != null) {
+						for (let i = 0; i < rows.length; i++) {
+							const row = rows[i] as UTSJSONObject
+							if ((row.getNumber('state') ?? 0) == 1) {
+								this.defines.push(row)
+							}
+						}
+					}
+				}).catch((_e) => { })
+			},
+			loadUsers() {
+				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
+				userSelectRows().then((rows) => {
+					const map = {} as UTSJSONObject
+					for (let i = 0; i < rows.length; i++) {
+						const row = rows[i]
+						this.users.push(row)
+						const id = row.getString('value') ?? ''
+						const label = row.getString('label') ?? ''
+						if (id.length > 0 && label.length > 0) {
+							map[id] = label
+						}
+					}
+					this.userNames = map
+					uni.setStorageSync('app:user:names', JSON.stringify(map))
+				}).catch((_e) => { })
+			},
+			onPickProcess() {
+				const names: string[] = ['全部流程']
+				for (let i = 0; i < this.defines.length; i++) {
+					const name = this.defines[i].getString('displayName') ?? ''
+					let dup = false
+					for (let j = 0; j < names.length; j++) {
+						if (names[j] == name) { dup = true; break }
+					}
+					if (!dup) {
+						names.push(name)
+					}
+				}
+				uni.showActionSheet({
+					title: '选择委托流程',
+					itemList: names,
+					success: (res: ShowActionSheetSuccess) => {
+						if (res.tapIndex != null) {
+							const idx = parseInt(res.tapIndex.toString())
+							this.processName = idx == 0 ? '' : names[idx]
+						}
+					}
+				})
+			},
+			onPickUser() {
+				const names: string[] = []
+				for (let i = 0; i < this.users.length; i++) {
+					names.push(this.users[i].getString('label') ?? '')
+				}
+				uni.showActionSheet({
+					title: '选择代理人',
+					itemList: names,
+					success: (res: ShowActionSheetSuccess) => {
+						if (res.tapIndex != null) {
+							const idx = parseInt(res.tapIndex.toString())
+							if (idx >= 0 && idx < this.users.length) {
+								this.surrogateId = this.users[idx].getString('value') ?? ''
+							}
+						}
+					}
+				})
+			},
+			openDate(target: string) {
+				this.datePickerTarget = target
+				const current = target == 'start' ? this.startDate : this.endDate
+				if (current.length > 0) {
+					this.datePickerValue = current
+				} else {
+					const d = new Date()
+					const m = d.getMonth() + 1
+					const day = d.getDate()
+					this.datePickerValue = d.getFullYear().toString() + '-' + (m <= 9 ? '0' + m : m.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
+				}
+				this.datePickerVisible = true
+			},
+			onDateOk(e: UTSJSONObject) {
+				this.datePickerVisible = false
+				const year = e.getNumber('year') ?? 0
+				const month = e.getNumber('month') ?? 1
+				const day = e.getNumber('day') ?? 1
+				const dateStr = year.toString() + '-' + (month <= 9 ? '0' + month : month.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
+				if (this.datePickerTarget == 'start') {
+					this.startDate = dateStr
+				} else {
+					this.endDate = dateStr
+				}
+			},
+			onEnabledChange(e: SwitchChangeEvent) {
+				this.enabled = e.detail.value
+			},
+			async handleSave() {
+				if (this.saving) {
+					return
+				}
+				if (this.surrogateId.length == 0) {
+					uni.showToast({ title: '请选择代理人', icon: 'none' })
+					return
+				}
+				if (this.startDate.length == 0 || this.endDate.length == 0) {
+					uni.showToast({ title: '请选择委托起止日期', icon: 'none' })
+					return
+				}
+				const param = {
+					processName: this.processName,
+					surrogate: this.surrogateId,
+					startTime: this.startDate + ' 00:00:00',
+					endTime: this.endDate + ' 23:59:59',
+					enabled: this.enabled ? 1 : 0
+				} as UTSJSONObject
+				if (this.id.length > 0) {
+					param['id'] = this.id
+				}
+				this.saving = true
+				uni.showLoading({ title: '保存中……', mask: true })
+				try {
+					if (this.id.length > 0) {
+						await processSurrogateUpdate(param)
+					} else {
+						await processSurrogateSave(param)
+					}
+					uni.hideLoading()
+					uni.showToast({ title: '保存成功', icon: 'success' })
+					setTimeout(() => {
+						uni.navigateBack()
+					}, 600)
+				} catch (err) {
+					uni.hideLoading()
+					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+				} finally {
+					this.saving = false
+				}
+			}
+		}
+	}
+</script>
+<style lang="less">
+.m-form-card{
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	margin: 20rpx;
+	padding: 10rpx 24rpx;
+	.m-row{
+		flex-direction: row;
+		align-items: center;
+		height: 100rpx;
+		border-bottom: 1rpx solid #F0F0F0;
+		.m-row-label{
+			width: 170rpx;
+			font-size: 28rpx;
+			color: #333333;
+		}
+		.m-row-value{
+			flex: 1;
+			flex-direction: row;
+			align-items: center;
+			padding-right: 12rpx;
+			.m-row-text{
+				font-size: 28rpx;
+				color: #333333;
+			}
+			.m-row-placeholder{
+				font-size: 28rpx;
+				color: #BBBBBB;
+			}
+		}
+	}
+}
+.m-submit-wrap{
+	padding: 20rpx 40rpx 60rpx 40rpx;
+	.m-submit-btn{
+		background-color: #2563EB;
+		border-radius: 12rpx;
+	}
+}
+</style>
