@@ -24,7 +24,7 @@ Android 体验包：[蒲公英 · jeeflow审批](https://www.pgyer.com/jeeflowsh
 
 | 模块 | 说明 |
 |------|------|
-| 登录 | 账号密码；登录页可切换接口地址（默认 pro 线上） |
+| 登录 | 账号密码；默认连 pro 线上，开发环境摇一摇 / 长按登录页 logo 可切换接口地址（正式包锁定 pro） |
 | 工作台 | 待办/消息角标；快捷发起（`processDesign/listByType`）；四小指标（待办/已办/我发起/抄送，走分页接口 recordCount） |
 | 审批中心 | 待办 / 已办 / 抄送 |
 | 统计 | 分析页接引擎 stats 三 action 真数据：指标卡/趋势（7天/30天/12月）/状态分布/流程 Top 10/当前积压节点与积压人 |
@@ -48,7 +48,7 @@ Android 体验包：[蒲公英 · jeeflow审批](https://www.pgyer.com/jeeflowsh
 
 - **uni-app x**（`.uvue` / `.uts`，无 npm 依赖树）
 - 编译与真机调试：**HBuilderX**（CLI `launch app-android`）
-- 默认联调：`https://jeeflow-pro.mldong.com/api`（可在登录页切换）
+- 默认联调：`https://jeeflow-pro.mldong.com/api`（开发环境摇一摇或长按登录页 logo 切换；`util/const.uts` 可加预设档位）
 
 ## 快速开始
 

@@ -1,9 +1,38 @@
 <script lang="uts">
 	let firstBackTime = 0
-	import { IS_LOGIN_KEY } from '@/util/const.uts'
+	import { IS_LOGIN_KEY, IS_DEV } from '@/util/const.uts'
+	// #ifdef APP
+	import { showApiSwitchSheet } from '@/util/api_switch.uts'
+	// 摇一摇弹接口切换（开发环境；算法同官方 hello-uni-app-x shake 示例：合加速度瞬时变化 + 冷却防抖）
+	let shakeLastMagnitude : number | null = null
+	let shakeLastTime = 0
+	const shakeListener : OnAccelerometerChangeCallback = (res : OnAccelerometerChangeCallbackResult) => {
+		const magnitude = Math.sqrt(res.x * res.x + res.y * res.y + res.z * res.z)
+		if (shakeLastMagnitude == null) {
+			shakeLastMagnitude = magnitude
+			return
+		}
+		const delta = Math.abs(magnitude - (shakeLastMagnitude as number))
+		shakeLastMagnitude = magnitude
+		const now = Date.now()
+		if (delta > 1.35 && now - shakeLastTime > 1200) {
+			shakeLastTime = now
+			showApiSwitchSheet()
+		}
+	}
+	// #endif
 	export default {
 		onLaunch: function () {
 			console.log('App Launch')
+			// #ifdef APP
+			// 开发环境全局摇一摇弹接口切换（模拟器无加速度计，走登录页长按 logo；production 编译期 IS_DEV=false 不注册）
+			if (IS_DEV) {
+				uni.onAccelerometerChange(shakeListener)
+				uni.startAccelerometer({
+					interval: 'game'
+				})
+			}
+			// #endif
 		},
 		onShow: function () {
 			console.log('App Show')

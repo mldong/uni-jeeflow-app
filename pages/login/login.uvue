@@ -1,6 +1,7 @@
 <template>
 	<view class="m-main">
-		<view class="m-logo">
+		<!-- 开发环境长按 logo 弹接口切换（模拟器/adb 走查用，真机可摇一摇）；正式包无任何入口 -->
+		<view class="m-logo" @longpress="onLogoLongpress">
 			<image class="m-logo-img" src="/static/app-icons/logo.png" mode="aspectFit"></image>
 			<text class="m-logo-title">jeeflow 审批</text>
 			<text class="m-logo-sub">jeeflow 工作流系列管理系统</text>
@@ -31,16 +32,13 @@
 				</view>
 			</form>
 		</view>
-		<!-- production 正式包不出切换入口，锁定 resolveBaseUrl()（pro 线上） -->
-		<view class="m-bottom" v-if="isDev">
-			<text @tap="onTapChangeApiUrl" class="m-change-api">切换接口地址（{{currentBaseUrl}}）</text>
-		</view>
 	</view>
 </template>
 <script lang="uts">
 	import { login, getCaptchaOpenFlag, captcha } from '@/api/user.uts'
-	import { TOKEY_KEY, IS_LOGIN_KEY, SELECT_URL_KEY, SELECT_URL_LABEL, SELECT_URL_VALUE, IS_DEV, resolveBaseUrl } from '@/util/const'
+	import { TOKEY_KEY, IS_LOGIN_KEY } from '@/util/const'
 	import { cleanCache, setRefreshToken } from '@/util/cache_util.uts';
+	import { showApiSwitchSheet } from '@/util/api_switch.uts'
 	export default {
 		data() {
 			return {
@@ -50,15 +48,6 @@
 				captchaImg: '',
 				captchaUuid: '',
 				captchaCode: ''
-			}
-		},
-		computed: {
-			// uni-app x 模板引用不到 import 标识符（error18），经 computed 暴露给模板
-			isDev: (): boolean => {
-				return IS_DEV
-			},
-			currentBaseUrl: (): string => {
-				return resolveBaseUrl()
 			}
 		},
 		onLoad() {
@@ -92,53 +81,9 @@
 					})
 				})
 			},
-			onTapChangeApiUrl() {
-				uni.showActionSheet({
-					title: '切换接口地址',
-					itemList: SELECT_URL_LABEL,
-					success: (e: ShowActionSheetSuccess) => {
-						let tapIndex = 0;
-						if (e.tapIndex != null) {
-							tapIndex = parseInt(e.tapIndex.toString())
-						}
-						if (tapIndex < SELECT_URL_LABEL.length - 1) {
-							uni.setStorageSync(SELECT_URL_KEY, SELECT_URL_VALUE[tapIndex])
-							uni.reLaunch({
-								url: '/pages/login/login'
-							})
-						} else {
-							// 最后一个是手输地址
-							uni.showModal({
-								title: '请输入接口地址',
-								editable: true,
-								placeholderText: "http://<局域网IP>:<端口>",
-								success: (res: ShowModalSuccess) => {
-									if (res.confirm) {
-										const content = res.content ?? ''
-										if (content.length == 0) {
-											uni.showToast({
-												title: '接口地址不能为空',
-												icon: "error"
-											})
-											return;
-										}
-										if (!content.startsWith("http://") && !content.startsWith("https://")) {
-											uni.showToast({
-												title: '请输入合法的接口地址',
-												icon: "error"
-											})
-											return;
-										}
-										uni.setStorageSync(SELECT_URL_KEY, content)
-										uni.reLaunch({
-											url: '/pages/login/login'
-										})
-									}
-								}
-							})
-						}
-					}
-				})
+			// 开发环境长按 logo 弹接口切换（IS_DEV 在 util 内短路，正式包无此能力）
+			onLogoLongpress() {
+				showApiSwitchSheet()
 			},
 			async handleLogin() {
 				if (this.$strUtil.isEmpty(this.userName) || this.$strUtil.isEmpty(this.password)) {
@@ -250,16 +195,6 @@
 			margin-top: 48rpx;
 			background-color: #2563EB;
 			border-radius: 12rpx;
-		}
-	}
-	.m-bottom{
-		position: fixed;
-		bottom: 40rpx;
-		right: 30rpx;
-		.m-change-api{
-			font-size: 24rpx;
-			color: #2563EB;
-			opacity: 0.7;
 		}
 	}
 }

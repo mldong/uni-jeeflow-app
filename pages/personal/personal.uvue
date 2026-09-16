@@ -31,7 +31,8 @@
 	import { ListTitleType, mListTitle } from '@/components/m-list-title'
 	import { logout, userinfo } from '@/api/user.uts'
 	import { cleanCache } from '@/util/cache_util.uts';
-	import { SELECT_URL_KEY, SELECT_URL_LABEL, SELECT_URL_VALUE, IS_DEV } from '@/util/const.uts';
+	import { IS_DEV } from '@/util/const.uts';
+	import { showApiSwitchSheet } from '@/util/api_switch.uts'
 	export default {
 		components: {
 			mListTitle
@@ -110,47 +111,9 @@
 					console.error(err)
 				}
 			},
+			// 与登录页长按 logo / 全局摇一摇共用同一 ActionSheet（util/api_switch.uts）
 			onChangeApiUrl() {
-				uni.showActionSheet({
-					title: '切换接口地址',
-					itemList: SELECT_URL_LABEL,
-					success: (e: ShowActionSheetSuccess) => {
-						let tapIndex = 0;
-						if (e.tapIndex != null) {
-							tapIndex = parseInt(e.tapIndex.toString())
-						}
-						if (tapIndex < SELECT_URL_LABEL.length - 1) {
-							uni.setStorageSync(SELECT_URL_KEY, SELECT_URL_VALUE[tapIndex])
-							cleanCache()
-							uni.reLaunch({
-								url: '/pages/login/login'
-							})
-						} else {
-							uni.showModal({
-								title: '请输入接口地址',
-								editable: true,
-								placeholderText: "http://<局域网IP>:<端口>",
-								success: (res: ShowModalSuccess) => {
-									if (res.confirm) {
-										const content = res.content ?? ''
-										if (content.length == 0 || (!content.startsWith("http://") && !content.startsWith("https://"))) {
-											uni.showToast({
-												title: '请输入合法的接口地址',
-												icon: "error"
-											})
-											return;
-										}
-										uni.setStorageSync(SELECT_URL_KEY, content)
-										cleanCache()
-										uni.reLaunch({
-											url: '/pages/login/login'
-										})
-									}
-								}
-							})
-						}
-					}
-				})
+				showApiSwitchSheet()
 			},
 			onAbout() {
 				uni.showModal({

@@ -1,0 +1,57 @@
+import { SELECT_URL_KEY, SELECT_URL_LABEL, SELECT_URL_VALUE, IS_DEV, resolveBaseUrl } from './const.uts'
+import { cleanCache } from './cache_util.uts'
+
+/**
+ * 切换接口地址 ActionSheet（开发环境专用，production 编译期 IS_DEV=false 直接短路，锁定 pro 线上）
+ * 触发入口三处共用：
+ * ① 全局摇一摇（真机，App.uvue onLaunch 注册加速度监听）
+ * ② 登录页长按 logo（模拟器/adb 走查无加速度计，长按等价触发）
+ * ③「我的」页「切换接口地址」菜单项
+ * 标题带当前生效地址（替代旧登录页常驻文案的环境提示职责）
+ */
+export const showApiSwitchSheet = (): void => {
+	if (!IS_DEV) {
+		return
+	}
+	uni.showActionSheet({
+		title: '切换接口地址（当前 ' + resolveBaseUrl() + '）',
+		itemList: SELECT_URL_LABEL,
+		success: (e: ShowActionSheetSuccess) => {
+			let tapIndex = 0;
+			if (e.tapIndex != null) {
+				tapIndex = parseInt(e.tapIndex.toString())
+			}
+			if (tapIndex < SELECT_URL_LABEL.length - 1) {
+				uni.setStorageSync(SELECT_URL_KEY, SELECT_URL_VALUE[tapIndex])
+				cleanCache()
+				uni.reLaunch({
+					url: '/pages/login/login'
+				})
+			} else {
+				// 最后一个是手输地址
+				uni.showModal({
+					title: '请输入接口地址',
+					editable: true,
+					placeholderText: "http://<局域网IP>:<端口>",
+					success: (res: ShowModalSuccess) => {
+						if (res.confirm) {
+							const content = res.content ?? ''
+							if (content.length == 0 || (!content.startsWith("http://") && !content.startsWith("https://"))) {
+								uni.showToast({
+									title: '请输入合法的接口地址',
+									icon: "error"
+								})
+								return;
+							}
+							uni.setStorageSync(SELECT_URL_KEY, content)
+							cleanCache()
+							uni.reLaunch({
+								url: '/pages/login/login'
+							})
+						}
+					}
+				})
+			}
+		}
+	})
+}

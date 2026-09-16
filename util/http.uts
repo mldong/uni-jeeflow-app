@@ -5,7 +5,7 @@
 //   - code===99990403（token 无效）→ UC-0113 静默续命：单飞调 /sys/refreshToken
 //     换新 (token, refreshToken) 后重放原请求（只重放一次），用户无感知；
 //     refresh 也失效才清登录态回登录页
-//   - 接口地址走 storage app:base_url 热切换（登录页「切换接口地址」）
+//   - 接口地址走 storage app:base_url 热切换（开发环境：摇一摇 / 长按登录页 logo / 我的页菜单）
 //   - 页面里 this.$responseInterceptor(res) 返回 boolean，决定是否走成功分支
 //     （修正 bill 遗留拼写 $resoposeInterceptor → $responseInterceptor）
 import { SUCCESS_CODE, TOKEN_INVALID_CODE, TOKEY_KEY, REFRESH_TOKEN_KEY, REFRESH_TOKEN_PATH, resolveBaseUrl } from '@/util/const.uts';
