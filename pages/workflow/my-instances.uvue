@@ -41,14 +41,21 @@
 		<!-- #ifdef APP -->
 		</scroll-view>
 		<!-- #endif -->
+		<!-- 通用选人弹层（抄送给：多选 + 搜索 + 部门名；列表页共享，ccTargetInstanceId 定目标） -->
+		<m-user-picker v-model:visible="ccPickerVisible" title="选择抄送人" :options="users" :selected="[] as string[]"
+			:multiple="true" @ok="onCcPickerOk"></m-user-picker>
 	</view>
 </template>
 <script lang="uts">
 	import { processInstancePage, processInstanceWithdraw, processInstanceCreateCc } from '@/api/workflow.uts'
-	import { userSelectRows } from '@/api/user.uts'
+	import { userPage } from '@/api/user.uts'
 	import { ERR_AUTH_REDIRECT } from '@/util/http.uts'
+	import mUserPicker from '@/components/m-user-picker/index.uvue'
 
 	export default {
+		components: {
+			mUserPicker
+		},
 		data() {
 			return {
 				pageNum: 1,
@@ -56,6 +63,9 @@
 				recordCount: 0,
 				instances: [] as UTSJSONObject[],
 				users: [] as UTSJSONObject[],
+				// 抄送选人弹层（多选+搜索+部门名，对齐 vben「选择抄送人」）
+				ccPickerVisible: false,
+				ccTargetInstanceId: '',
 				// 首屏加载失败标记：true 时显示可重试错误态而非「暂无数据」
 				loadFailed: false,
 				refresherTriggered: false,
@@ -166,11 +176,26 @@
 				})
 			},
 			loadUsers() {
-				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
-				userSelectRows().then((rows) => {
+				// /sys/user/page：行含 deptName，选人弹层带搜索+部门名（对齐 vben UserSelect 抽屉数据源）
+				userPage({
+					pageNum: 1,
+					pageSize: 200
+				} as UTSJSONObject).then((res) => {
+					const resObj = res as UTSJSONObject
+					const rows = resObj != null ? resObj!.getArray<UTSJSONObject>('rows') : null
 					this.users = [] as UTSJSONObject[]
-					for (let i = 0; i < rows.length; i++) {
-						this.users.push(rows[i])
+					if (rows != null) {
+						for (let i = 0; i < rows!.length; i++) {
+							const id = rows![i].getString('id') ?? ''
+							if (id.length == 0) {
+								continue
+							}
+							this.users.push({
+								label: rows![i].getString('realName') ?? id,
+								value: id,
+								desc: rows![i].getString('deptName') ?? ''
+							} as UTSJSONObject)
+						}
 					}
 				}).catch((_e) => {
 					// 用户列表仅「抄送给」用：失败静默，操作时会提示「用户列表加载中」并可重拉
@@ -223,38 +248,28 @@
 					this.loadUsers()
 					return
 				}
-				const names: string[] = []
-				for (let i = 0; i < this.users.length; i++) {
-					names.push(this.users[i].getString('label') ?? '')
+				// 选人换 m-user-picker（多选 + 搜索 + 部门名）；列表页共享单例弹层，先记目标实例
+				this.ccTargetInstanceId = instanceId
+				this.ccPickerVisible = true
+			},
+			onCcPickerOk(vals: string[]) {
+				if (vals.length == 0 || this.ccTargetInstanceId.length == 0) {
+					return
 				}
 				const self = this
-				uni.showActionSheet({
-					title: '抄送给',
-					itemList: names,
-					success: (res: ShowActionSheetSuccess) => {
-						if (res.tapIndex == null) return
-						const idx = parseInt(res.tapIndex.toString())
-						if (idx < 0 || idx >= self.users.length) return
-						const actorId = self.users[idx].getString('value') ?? ''
-						const actorName = self.users[idx].getString('label') ?? ''
-						if (actorId.length == 0) return
-						self.acting = true
-						uni.showLoading({ title: '抄送中……', mask: true })
-						const actorIds: string[] = []
-						actorIds.push(actorId)
-						processInstanceCreateCc({
-							processInstanceId: instanceId,
-							actorIds: actorIds
-						} as UTSJSONObject).then((_r) => {
-							uni.hideLoading()
-							uni.showToast({ title: '已抄送给 ' + actorName, icon: 'success' })
-						}).catch((err) => {
-							uni.hideLoading()
-							uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
-						}).finally(() => {
-							self.acting = false
-						})
-					}
+				self.acting = true
+				uni.showLoading({ title: '抄送中……', mask: true })
+				processInstanceCreateCc({
+					processInstanceId: self.ccTargetInstanceId,
+					actorIds: vals
+				} as UTSJSONObject).then((_r) => {
+					uni.hideLoading()
+					uni.showToast({ title: '已抄送 ' + vals.length.toString() + ' 人', icon: 'success' })
+				}).catch((err) => {
+					uni.hideLoading()
+					uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
+				}).finally(() => {
+					self.acting = false
 				})
 			},
 			onRestart(item: UTSJSONObject) {
