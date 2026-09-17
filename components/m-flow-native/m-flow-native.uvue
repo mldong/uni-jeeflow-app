@@ -2,6 +2,21 @@
 	<!-- 内嵌形态：详情页流程图卡片（工具条走文档流首行右对齐，uvue 绝对定位浮层收不到 tap） -->
 		<view class="mfn-wrap" v-if="!fullscreen">
 			<view class="mfn-toolbar-row">
+				<!-- 状态图例（对齐节点彩条色：进行中橙/已完成绿/未激活蓝） -->
+				<view class="mfn-legend">
+					<view class="mfn-legend-item">
+						<view class="mfn-legend-dot" style="background-color: #FF8C00"></view>
+						<text class="mfn-legend-text">进行中</text>
+					</view>
+					<view class="mfn-legend-item">
+						<view class="mfn-legend-dot" style="background-color: #52C41A"></view>
+						<text class="mfn-legend-text">已完成</text>
+					</view>
+					<view class="mfn-legend-item">
+						<view class="mfn-legend-dot" style="background-color: #1890FF"></view>
+						<text class="mfn-legend-text">未激活</text>
+					</view>
+				</view>
 				<view class="mfn-tools">
 					<view class="mfn-tool-btn" @tap="zoomOut">
 						<text class="mfn-tool-text">−</text>
@@ -15,7 +30,7 @@
 					</view>
 				</view>
 			</view>
-			<scroll-view scroll-x scroll-y class="mfn-embed-scroll" :height="embedScrollH">
+			<scroll-view :scroll-x="true" :scroll-y="true" class="mfn-embed-scroll" :style="{height: embedScrollH}">
 				<!-- sizer 撑出"缩放后"的可滚动区域（transform 不改变布局尺寸，需显式占位） -->
 				<view class="mfn-sizer" :style="sizerStyle">
 					<!-- 内嵌态 canvas 宽 = 卡片实测宽（cardW），100% 时内容在卡片内严格居中 -->
@@ -35,6 +50,20 @@
 			<view class="mfn-full-title">
 				<text class="mfn-full-title-text">流程图</text>
 			</view>
+			<view class="mfn-legend mfn-legend--full">
+				<view class="mfn-legend-item">
+					<view class="mfn-legend-dot" style="background-color: #FF8C00"></view>
+					<text class="mfn-legend-text">进行中</text>
+				</view>
+				<view class="mfn-legend-item">
+					<view class="mfn-legend-dot" style="background-color: #52C41A"></view>
+					<text class="mfn-legend-text">已完成</text>
+				</view>
+				<view class="mfn-legend-item">
+					<view class="mfn-legend-dot" style="background-color: #1890FF"></view>
+					<text class="mfn-legend-text">未激活</text>
+				</view>
+			</view>
 			<view class="mfn-tools mfn-tools--full">
 				<view class="mfn-tool-btn" @tap="zoomOut">
 					<text class="mfn-tool-text">−</text>
@@ -50,7 +79,7 @@
 		</view>
 		<view class="mfn-full-body"
 			@touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd" @touchcancel="onTouchEnd">
-			<scroll-view scroll-x scroll-y class="mfn-full-scroll">
+			<scroll-view :scroll-x="true" :scroll-y="true" class="mfn-full-scroll">
 				<view class="mfn-sizer" :style="sizerStylePx">
 					<!-- 全屏态 canvas 宽 = max(750, 内容宽)：100% 时贴满屏宽居中 -->
 					<view class="mfn-canvas" :style="canvasStyle">
@@ -226,7 +255,7 @@
 			graph(_n) {
 				// 数据到位/变化后重测内容尺寸（缩放视口依赖）
 				this.$nextTick(() => {
-					this.measureCanvas()
+					this.measureCanvas(0)
 				})
 			}
 		},
@@ -239,7 +268,7 @@
 				// 保持默认值
 			}
 			this.$nextTick(() => {
-				this.measureCanvas()
+				this.measureCanvas(0)
 			})
 		},
 		methods: {
@@ -262,28 +291,35 @@
 				this.scale = 1.0
 				this.fullscreen = true
 				setTimeout(() => {
-					this.measureCanvas()
+					this.measureCanvas(0)
 				}, 180)
 			},
 			closeFullscreen() {
 				this.fullscreen = false
 				this.scale = this.prevScale
 				setTimeout(() => {
-					this.measureCanvas()
+					this.measureCanvas(0)
 				}, 180)
 			},
 			// ── 内容尺寸测量（rpx，未缩放基准；量不到时 sizer 用兜底尺寸） ──
 			// boundingClientRect 返回的是 transform 后的 px，需同时除以 scale 与 rpxScale
 			// 只量高度（canvas）+ 卡片宽（工具条行）；宽度纯算术，不量 canvas（stretch 正反馈）
-			measureCanvas() {
+			// 递归树跨多帧渲染：单次 nextTick 测量会拿到未长全的高度（sizer 矮于内容 → 图内滚不动、
+			// 底部裁剪），故带重试增量测量，取历史最大值（v0.1.5 实弹修复）
+			measureCanvas(retry: number) {
 				const self = this
 				const s = this.scale
 				uni.createSelectorQuery().select('.mfn-canvas').boundingClientRect((rect) => {
 					const node = rect as NodeInfo
 					const hPx = node.height ?? 0
 					const baseH = s > 0 ? hPx / s / self.rpxScale : 0
-					if (baseH > 0) {
+					if (baseH > self.contentH) {
 						self.contentH = baseH
+					}
+					if (retry < 4) {
+						setTimeout(() => {
+							self.measureCanvas(retry + 1)
+						}, 250)
 					}
 				}).exec()
 				uni.createSelectorQuery().select('.mfn-toolbar-row').boundingClientRect((rect) => {
@@ -361,11 +397,32 @@
 .mfn-wrap{
 	flex-direction: column;
 }
-// 工具条行：右对齐（文档流首行，天然右上角，不压内容）
+// 工具条行：左图例右工具（文档流首行，uvue 绝对定位浮层收不到 tap）
 .mfn-toolbar-row{
 	flex-direction: row;
-	justify-content: flex-end;
+	justify-content: space-between;
+	align-items: center;
 	padding: 8rpx 8rpx 0;
+}
+// 状态图例（色值对齐 m-flow-tree 节点彩条）
+.mfn-legend{
+	flex-direction: row;
+	align-items: center;
+	.mfn-legend-item{
+		flex-direction: row;
+		align-items: center;
+		margin-right: 14rpx;
+		.mfn-legend-dot{
+			width: 16rpx;
+			height: 16rpx;
+			border-radius: 8rpx;
+			margin-right: 6rpx;
+		}
+		.mfn-legend-text{
+			font-size: 20rpx;
+			color: #999999;
+		}
+	}
 }
 // 内嵌滚动视口（高度由 embedScrollH 撑，封顶 1200rpx）
 .mfn-embed-scroll{
@@ -424,6 +481,12 @@
 	position: relative;
 	top: 0;
 	right: 0;
+}
+// 全屏头部图例：夹在标题与工具之间居中
+.mfn-legend--full{
+	flex: 1;
+	justify-content: center;
+	margin: 0 12rpx;
 }
 // 全屏遮罩
 .mfn-full{

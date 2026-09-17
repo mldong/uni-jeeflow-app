@@ -5,7 +5,7 @@
 			<view class="mft-cond-header">
 				<text class="mft-cond-title">条件分支</text>
 			</view>
-			<scroll-view scroll-x class="mft-cond-scroll">
+			<scroll-view :scroll-x="true" class="mft-cond-scroll">
 				<view class="mft-branches" :style="{width: branchesWidth + 'rpx'}">
 					<view class="mft-hline mft-hline--top" :style="{left: hlineLeft + 'rpx', width: hlineWidth + 'rpx'}"></view>
 					<view class="mft-col" v-for="(b, bi) in branches" :key="b.id">
@@ -25,7 +25,7 @@
 			<view class="mft-cond-header">
 				<text class="mft-cond-title">并行分支</text>
 			</view>
-			<scroll-view scroll-x class="mft-cond-scroll">
+			<scroll-view :scroll-x="true" class="mft-cond-scroll">
 				<view class="mft-branches" :style="{width: branchesWidth + 'rpx'}">
 					<view class="mft-hline mft-hline--top" :style="{left: hlineLeft + 'rpx', width: hlineWidth + 'rpx'}"></view>
 					<view class="mft-col" v-for="(b, bi) in branches" :key="b.id">
@@ -440,12 +440,19 @@
 		}
 	}
 }
-// 高亮描边（active 橙 / history 绿）
+// 高亮描边（active 橙 / history 绿）：border 替代 box-shadow spread
+// （Android box-shadow 扩散渲染有四角断缝/边缘空隙）；border 与左侧彩条同色紧贴无缝
 .mft-card--active{
-	box-shadow: 0 0 0 4rpx #FF8C00, 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: #FF8C00;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
 }
 .mft-card--history{
-	box-shadow: 0 0 0 4rpx #52C41A, 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: #52C41A;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
 }
 // 条件/并行分支组
 .mft-cond{

@@ -62,22 +62,27 @@
 		<view class="m-action-bar" v-else>
 			<button class="m-action-btn m-action-btn--ghost" @tap="onCreateCc">抄送给</button>
 		</view>
+		<!-- 通用选人弹层（抄送给：多选 + 搜索 + 部门名） -->
+		<m-user-picker v-model:visible="ccPickerVisible" title="选择抄送人" :options="users" :selected="[] as string[]"
+			:multiple="true" @ok="onCcPickerOk"></m-user-picker>
 	</view>
 </template>
 <script lang="uts">
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
 	import mTimeline from '@/components/m-timeline/m-timeline.uvue'
 	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
+	import mUserPicker from '@/components/m-user-picker/index.uvue'
 	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm, buildInitiatorExtraFields } from '@/util/form_schemas.uts'
 	import { processInstanceDetail, processInstanceHighLight, processInstanceApprovalRecord, processInstanceWithdraw, processInstanceCreateCc } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
-	import { userSelectRows } from '@/api/user.uts'
+	import { userPage } from '@/api/user.uts'
 
 	export default {
 		components: {
 			mSchemaForm,
 			mTimeline,
-			mFlowNative
+			mFlowNative,
+			mUserPicker
 		},
 		data() {
 			return {
@@ -93,6 +98,7 @@
 				highLight: null as UTSJSONObject | null,
 				records: [] as UTSJSONObject[],
 				users: [] as UTSJSONObject[],
+				ccPickerVisible: false,
 				loading: false
 			};
 		},
@@ -189,11 +195,26 @@
 				}
 			},
 			loadUsers() {
-				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
-				userSelectRows().then((rows) => {
+				// /sys/user/page：行含 deptName/userName，选人弹层（带搜索+部门名）与发起人 id→姓名解析共用
+				userPage({
+					pageNum: 1,
+					pageSize: 200
+				} as UTSJSONObject).then((res) => {
+					const resObj = res as UTSJSONObject
+					const rows = resObj != null ? resObj!.getArray<UTSJSONObject>('rows') : null
 					this.users = [] as UTSJSONObject[]
-					for (let i = 0; i < rows.length; i++) {
-						this.users.push(rows[i])
+					if (rows != null) {
+						for (let i = 0; i < rows!.length; i++) {
+							const id = rows![i].getString('id') ?? ''
+							if (id.length == 0) {
+								continue
+							}
+							this.users.push({
+								label: rows![i].getString('realName') ?? id,
+								value: id,
+								desc: rows![i].getString('deptName') ?? ''
+							} as UTSJSONObject)
+						}
 					}
 					this.refreshOperatorNameIfNeeded()
 				}).catch((_e) => { })
@@ -280,40 +301,29 @@
 				}
 			},
 			onCreateCc() {
+				// 选人换 m-user-picker（多选 + 关键字搜索 + 部门名，对齐 vben「选择抄送人」弹窗）
 				if (this.users.length == 0) {
 					uni.showToast({ title: '用户列表加载中，请稍后', icon: 'none' })
 					this.loadUsers()
 					return
 				}
-				const names: string[] = []
-				for (let i = 0; i < this.users.length; i++) {
-					names.push(this.users[i].getString('label') ?? '')
+				this.ccPickerVisible = true
+			},
+			onCcPickerOk(vals: string[]) {
+				if (vals.length == 0) {
+					return
 				}
 				const self = this
-				uni.showActionSheet({
-					title: '抄送给',
-					itemList: names,
-					success: (res: ShowActionSheetSuccess) => {
-						if (res.tapIndex == null) return
-						const idx = parseInt(res.tapIndex.toString())
-						if (idx < 0 || idx >= self.users.length) return
-						const actorId = self.users[idx].getString('value') ?? ''
-						const actorName = self.users[idx].getString('label') ?? ''
-						if (actorId.length == 0) return
-						uni.showLoading({ title: '抄送中……', mask: true })
-						const actorIds: string[] = []
-						actorIds.push(actorId)
-						processInstanceCreateCc({
-							processInstanceId: self.instanceId,
-							actorIds: actorIds
-						} as UTSJSONObject).then((_r) => {
-							uni.hideLoading()
-							uni.showToast({ title: '已抄送给 ' + actorName, icon: 'success' })
-						}).catch((err) => {
-							uni.hideLoading()
-							uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
-						})
-					}
+				uni.showLoading({ title: '抄送中……', mask: true })
+				processInstanceCreateCc({
+					processInstanceId: self.instanceId,
+					actorIds: vals
+				} as UTSJSONObject).then((_r) => {
+					uni.hideLoading()
+					uni.showToast({ title: '已抄送 ' + vals.length.toString() + ' 人', icon: 'success' })
+				}).catch((err) => {
+					uni.hideLoading()
+					uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
 				})
 			},
 			onWithdraw() {
