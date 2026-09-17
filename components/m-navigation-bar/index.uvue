@@ -99,6 +99,11 @@
 </script>
 
 <style lang="less">
+	// 样式隔离 2.0：组件不再自动继承全局工具类。本组件模板/script 动态类绑定了
+	// center/row/h-88/ml-64/justify-content-* /align-items-flex-center 等（标题居中全靠它们，
+	// 漏 import 的实弹后果：工作台等页面标题左对齐且溢出——v0.2.0 回归，v0.2.1 修复）
+	@import url("@/static/css/common.less");
+
 	.m-status-bar {
 		height: var(--status-bar-height);
 		width: 100%;
