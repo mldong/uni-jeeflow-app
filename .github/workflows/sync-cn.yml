@@ -1,0 +1,52 @@
+name: sync-cn
+
+# 国内镜像同步：push master（提交即同步，App 无发版 tag，与引擎仓 tag 触发不同），
+# 把 master 分支同步到 Gitee / GitCode 国内镜像仓。
+#
+# 前置配置（一次性）：
+#   1. 在 gitee.com / gitcode.com 创建同名空仓库（mldong/uni-jeeflow-app）
+#   2. Secrets 走 GitHub org（mldong）级继承：GITEE_OWNER / GITEE_USERNAME / GITEE_TOKEN
+#      / GITCODE_OWNER / GITCODE_TOKEN，无需逐仓配置
+#   详细步骤见 mldong-hub/docs/github-sync-cn.md
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch: {} # 手动触发（首次配置后验证用）
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout（master）
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Sync to Gitee
+        env:
+          GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          if [ -z "$GITEE_OWNER" ] || [ -z "$GITEE_TOKEN" ]; then
+            echo "⚠️ 未配置 GITEE_OWNER/GITEE_TOKEN，跳过 Gitee 同步"
+            exit 0
+          fi
+          git push --force \
+            "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${{ github.event.repository.name }}.git" \
+            master
+
+      - name: Sync to GitCode
+        env:
+          GITCODE_OWNER: ${{ secrets.GITCODE_OWNER }}
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+        run: |
+          if [ -z "$GITCODE_OWNER" ] || [ -z "$GITCODE_TOKEN" ]; then
+            echo "⚠️ 未配置 GITCODE_OWNER/GITCODE_TOKEN，跳过 GitCode 同步"
+            exit 0
+          fi
+          git push --force \
+            "https://oauth2:${GITCODE_TOKEN}@gitcode.com/${GITCODE_OWNER}/${{ github.event.repository.name }}.git" \
+            master
