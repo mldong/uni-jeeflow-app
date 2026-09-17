@@ -120,6 +120,8 @@
 		flex-direction: row;
 		align-items: flex-end;
 		height: 200rpx;
+		// 底轴线：零值桶不再悬空无参照
+		border-bottom-width: 2rpx;
 		border-bottom-style: solid;
 		border-bottom-color: #E8E8E8;
 	}

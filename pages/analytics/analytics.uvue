@@ -507,6 +507,7 @@
 	}
 
 	.m-seg-item--active {
+		background-color: #2563EB;
 		box-shadow: 0 2rpx 8rpx rgba(37, 99, 235, 0.3);
 	}
 

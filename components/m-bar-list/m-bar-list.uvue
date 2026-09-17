@@ -25,63 +25,59 @@
 	</view>
 </template>
 
-<script lang="uts">
-	export default {
-		name: 'm-bar-list',
-		props: {
-			rows: {
-				type: Array as PropType<UTSJSONObject[]>,
-				default: (): UTSJSONObject[] => [] as UTSJSONObject[]
-			},
-			title: {
-				type: String,
-				default: ''
-			},
-			unit: {
-				type: String,
-				default: ''
-			}
-		},
-		computed: {
-			maxVal(): number {
-				let m = 0
-				const arr = this.rows
-				for (let i = 0; i < arr.length; i++) {
-					const v = arr[i].getNumber('count') ?? 0
-					if (v > m) {
-						m = v
-					}
-				}
-				return m
-			}
-		},
-		methods: {
-			barWidth(item: UTSJSONObject): number {
-				const max = this.maxVal
-				if (max <= 0) {
-					return 0
-				}
-				const v = item.getNumber('count') ?? 0
-				const pct = Math.round(v * 100 / max)
-				return pct < 2 && v > 0 ? 2 : pct
-			},
-			barColor(index: number): string {
-				if (index == 0) return '#1D4ED8'
-				if (index == 1) return '#2563EB'
-				if (index == 2) return '#3B82F6'
-				return '#93C5FD'
-			},
-			showSub(item: UTSJSONObject): boolean {
-				const avg = item.getNumber('avgDurationSeconds')
-				return avg != null && avg > 0
-			},
-			subText(item: UTSJSONObject): string {
-				const avg = item.getNumber('avgDurationSeconds') ?? 0
-				const days = avg / 86400.0
-				const s = days.toFixed(1)
-				return '均' + s + '天'
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	type Props = {
+		rows?: UTSJSONObject[],
+		title?: string,
+		unit?: string
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		rows: (): UTSJSONObject[] => [] as UTSJSONObject[],
+		title: '',
+		unit: ''
+	})
+
+	const maxVal = computed((): number => {
+		let m = 0
+		const arr = props.rows
+		for (let i = 0; i < arr.length; i++) {
+			const v = arr[i].getNumber('count') ?? 0
+			if (v > m) {
+				m = v
 			}
 		}
+		return m
+	})
+
+	function barWidth(item: UTSJSONObject): number {
+		const max = maxVal.value
+		if (max <= 0) {
+			return 0
+		}
+		const v = item.getNumber('count') ?? 0
+		const pct = Math.round(v * 100 / max)
+		return pct < 2 && v > 0 ? 2 : pct
+	}
+
+	function barColor(index: number): string {
+		if (index == 0) return '#1D4ED8'
+		if (index == 1) return '#2563EB'
+		if (index == 2) return '#3B82F6'
+		return '#93C5FD'
+	}
+
+	function showSub(item: UTSJSONObject): boolean {
+		const avg = item.getNumber('avgDurationSeconds')
+		return avg != null && avg > 0
+	}
+
+	function subText(item: UTSJSONObject): string {
+		const avg = item.getNumber('avgDurationSeconds') ?? 0
+		const days = avg / 86400.0
+		const s = days.toFixed(1)
+		return '均' + s + '天'
 	}
 </script>
 

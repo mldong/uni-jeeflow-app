@@ -228,6 +228,8 @@
 
 	.m-submit-bar {
 		background-color: #ffffff;
+		// uni-app x 不支持 calc(env())，底部留白给足（含手势条区域余量）
+		padding: 20rpx 24rpx 70rpx;
 	}
 
 	.m-submit-btn {
