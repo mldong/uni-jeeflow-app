@@ -16,9 +16,9 @@
 				</slot>
 			</view>
 		</view>
-		<view class="m-more" v-if="$slots.has('more')" @tap="onMore" :style="{width: moreWidth}">
+		<view class="m-more" v-if="hasMore" @tap="onMore" :style="{width: moreWidth}">
 			<slot name="more">
-				
+
 			</slot>
 		</view>
 	</view>
@@ -26,6 +26,8 @@
 
 <script setup lang="uts">
 	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	// 注意：蒸汽运行时 slots 对象没有 has() 方法（TypeError: slots.has is not a function），
+	// 「是否传了 more 插槽」改为显式 hasMore prop（调用方 message.uvue/surrogate.uvue 传 :hasMore="true"）
 	type Props = {
 		title?: string,
 		icon?: string,
@@ -33,7 +35,9 @@
 		showBack?: boolean,
 		// 返回前处理，如果返回Promise.resolve(false),则不执行返回
 		beforeBack?: () => Promise<Boolean>,
-		moreWidth?: string
+		moreWidth?: string,
+		// 是否传入 more 插槽（右上角动作区，蒸汽下无法运行时探测插槽）
+		hasMore?: boolean
 	}
 
 	const props = withDefaults(defineProps<Props>(), {
@@ -41,20 +45,15 @@
 		icon: 'left',
 		align: 'center',
 		showBack: true,
-		moreWidth: '64rpx'
+		moreWidth: '64rpx',
+		hasMore: false
 	})
 
 	const emit = defineEmits(['back', 'more'])
 
-	const slots = useSlots()
-
 	const titleClass = computed((): String => {
 		if (props.showBack) {
-			if (slots.has('more')) {
-				return 'm-title center';
-			} else {
-				return 'm-title center'
-			}
+			return 'm-title center'
 		}
 		return 'm-title'
 	})
@@ -64,7 +63,7 @@
 		if (props.showBack) {
 			n++;
 		}
-		if (slots.has('more')) {
+		if (props.hasMore) {
 			n++;
 		}
 		const w = 750 - n * 64;

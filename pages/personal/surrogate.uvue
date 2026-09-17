@@ -1,6 +1,6 @@
 <template>
 	<view style="flex: 1;background-color: #F5F6FA;">
-		<m-navigation-bar :showBack="true">
+		<m-navigation-bar :showBack="true" :hasMore="true">
 			<template #title>
 				<text class="m-nav-title">委托代理</text>
 			</template>
