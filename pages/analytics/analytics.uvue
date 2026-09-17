@@ -306,7 +306,7 @@
 						for (let i = 0; i < arr.length; i++) {
 							const item = arr[i]
 							out.push({
-								label: item.getString('bucket') ?? '',
+								label: this.shortBucketLabel(item.getString('bucket') ?? ''),
 								a: item.getNumber('started') ?? 0,
 								b: item.getNumber('finished') ?? 0
 							} as UTSJSONObject)
@@ -316,6 +316,17 @@
 				}).catch((_e) => {}).finally(() => {
 					this.checkLoadingDone()
 				})
+			},
+			// x 轴短标签：桶列多（30d 每列仅 ~30rpx）时完整日期被 lines:1 截成「20」，
+			// 按 Tab 预裁——7d 显 MM-dd / 30d 显 dd / 12m 显 yy-MM
+			shortBucketLabel(bucket: string): string {
+				if (this.trendRange == '12m') {
+					return bucket.length >= 7 ? bucket.substring(2, 7) : bucket
+				}
+				if (this.trendRange == '30d') {
+					return bucket.length >= 10 ? bucket.substring(8, 10) : bucket
+				}
+				return bucket.length >= 10 ? bucket.substring(5, 10) : bucket
 			},
 			loadGroupState() {
 				statsGroup({ dimension: 'state' } as UTSJSONObject).then((res) => {

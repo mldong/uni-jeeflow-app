@@ -9,6 +9,8 @@
 				<view class="m-mini-bars-legend-dot" style="background-color: #16A34A;"></view>
 				<text class="m-mini-bars-legend-text">{{legendB}}</text>
 			</view>
+			<!-- 峰值参照：柱高相对归一，无此值无法读数 -->
+			<text class="m-mini-bars-peak">峰值 {{maxVal}}</text>
 		</view>
 		<view class="m-mini-bars-chart">
 			<view class="m-mini-bars-col" v-for="(item, index) in buckets" :key="index">
@@ -104,11 +106,20 @@
 				color: #666666;
 			}
 		}
+		.m-mini-bars-peak{
+			margin-left: auto;
+			font-size: 20rpx;
+			color: #BBBBBB;
+		}
 	}
 	.m-mini-bars-chart{
 		flex-direction: row;
 		align-items: flex-end;
 		height: 200rpx;
+		// 底轴线：零值桶不再悬空无参照
+		border-bottom-width: 2rpx;
+		border-bottom-style: solid;
+		border-bottom-color: #E8E8E8;
 		.m-mini-bars-col{
 			flex: 1;
 			align-items: center;

@@ -1,6 +1,6 @@
 <template>
 	<view style="flex: 1;background-color: #F5F6FA;">
-		<m-navigation-bar :showBack="false" :moreWidth="'160rpx'">
+		<m-navigation-bar :showBack="true" :moreWidth="'160rpx'">
 			<template #title>
 				<text class="m-nav-title">消息中心</text>
 			</template>
