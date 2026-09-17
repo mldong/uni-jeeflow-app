@@ -29,6 +29,15 @@ export const userSelect = (param: UTSJSONObject): Promise<any> => {
 	} as HttpConfig)
 }
 /**
+ * 用户分页 {pageNum,pageSize} → {rows:[{id,userName,realName,deptName,mobilePhone,...}]}
+ * 行是系统用户实体，含 deptName/userName（对齐 vben UserSelect 抽屉数据源 + 关键字搜索语义）
+ */
+export const userPage = (param: UTSJSONObject): Promise<any> => {
+	return http.post("/sys/user/page", {
+		data: param
+	} as HttpConfig)
+}
+/**
  * 用户下拉标准化：data 为 [{label,value}] 或 {rows:[...]} 两种栈形态统一成数组
  * （审批人/抄送人/加签选单共用；走 http 封装，token 失效同样吃静默续命/跳登录）
  */

@@ -11,24 +11,31 @@
 					<text class="m-up-head-ok">确定</text>
 				</view>
 			</view>
+			<!-- 关键字搜索（本地过滤姓名/部门，对齐 vben UserSelect showSearch） -->
+			<view class="m-up-search-wrap">
+				<input class="m-up-search" :value="keyword" placeholder="搜索姓名/部门" placeholder-class="m-up-search-ph"
+					@input="onSearch" />
+			</view>
 			<scroll-view class="m-up-list" :scroll-y="true">
 				<!-- 单选：radio-group（替代 ActionSheet，选项多时可滚动） -->
 				<radio-group v-if="!multiple" class="m-up-group" @change="onRadioChange">
-					<view class="m-up-row" v-for="(o, oi) in options" :key="oi">
+					<view class="m-up-row" v-for="(o, oi) in filteredOptions" :key="oi">
 						<radio :value="optionValue(o)" :checked="isSel(o)" color="#2563EB" style="transform:scale(0.8);" />
 						<text class="m-up-row-text">{{o.getString('label') ?? ''}}</text>
+						<text class="m-up-row-desc" v-if="(o.getString('desc') ?? '').length > 0">{{o.getString('desc')}}</text>
 					</view>
 				</radio-group>
 				<!-- 多选：checkbox-group，确定后以 value 数组回抛 -->
 				<checkbox-group v-else class="m-up-group" @change="onCheckboxChange">
-					<view class="m-up-row" v-for="(o, oi) in options" :key="oi">
+					<view class="m-up-row" v-for="(o, oi) in filteredOptions" :key="oi">
 						<checkbox :value="optionValue(o)" :checked="isSel(o)" color="#2563EB" style="transform:scale(0.8);" />
 						<text class="m-up-row-text">{{o.getString('label') ?? ''}}</text>
+						<text class="m-up-row-desc" v-if="(o.getString('desc') ?? '').length > 0">{{o.getString('desc')}}</text>
 					</view>
 				</checkbox-group>
 			</scroll-view>
-			<view class="m-up-empty" v-if="options.length == 0">
-				<text class="m-up-empty-text">暂无可选项</text>
+			<view class="m-up-empty" v-if="filteredOptions.length == 0">
+				<text class="m-up-empty-text">{{keyword.length > 0 ? '无匹配人员' : '暂无可选项'}}</text>
 			</view>
 		</view>
 	</view>
@@ -52,40 +59,66 @@
 				type: String,
 				default: '请选择'
 			},
-			// 选项 [{label, value}]
-			options: {
-				type: Array as PropType<UTSJSONObject[]>,
-				default: [] as UTSJSONObject[]
-			},
-			// 已选 value 集合（回显）
-			selected: {
-				type: Array as PropType<string[]>,
-				default: [] as string[]
-			},
-			multiple: {
-				type: Boolean,
-				default: false
+		// 选项 [{label, value, desc?}]（desc=部门名等次要信息，userPage 源才有）
+		options: {
+			type: Array as PropType<UTSJSONObject[]>,
+			default: [] as UTSJSONObject[]
+		},
+		// 已选 value 集合（回显）
+		selected: {
+			type: Array as PropType<string[]>,
+			default: [] as string[]
+		},
+		multiple: {
+			type: Boolean,
+			default: false
+		}
+	},
+	emits: ['update:visible', 'ok'],
+	data() {
+		return {
+			innerSel: [] as string[],
+			keyword: ''
+		};
+	},
+	computed: {
+		// 关键字本地过滤（姓名/部门包含匹配，大小写不敏感；v-for 迭代 props 数组需 computed 中转，error19 同款）
+		filteredOptions(): UTSJSONObject[] {
+			const kw = this.keyword.toLowerCase()
+			if (kw.length == 0) {
+				return this.options
 			}
-		},
-		emits: ['update:visible', 'ok'],
-		data() {
-			return {
-				innerSel: [] as string[]
-			};
-		},
-		watch: {
-			// 每次打开从 props 重建内部选中态，避免上次选择的残留
-			visible(n: Boolean) {
-				if (n == true) {
-					const arr: string[] = []
-					for (let i = 0; i < this.selected.length; i++) {
-						arr.push(this.selected[i])
-					}
-					this.innerSel = arr
+			const out: UTSJSONObject[] = []
+			for (let i = 0; i < this.options.length; i++) {
+				const o = this.options[i]
+				const label = (o.getString('label') ?? '').toLowerCase()
+				const desc = (o.getString('desc') ?? '').toLowerCase()
+				if (label.indexOf(kw) >= 0 || desc.indexOf(kw) >= 0) {
+					out.push(o)
 				}
 			}
+			return out
+		}
+	},
+	watch: {
+		// 每次打开从 props 重建内部选中态，避免上次选择的残留；关键字一并清空
+		visible(n: Boolean) {
+			if (n == true) {
+				const arr: string[] = []
+				for (let i = 0; i < this.selected.length; i++) {
+					arr.push(this.selected[i])
+				}
+				this.innerSel = arr
+				this.keyword = ''
+			}
+		}
+	},
+	methods: {
+		// 模板内 $event 是 Any，参数收 any 后内部断言（error17，同 m-schema-form）
+		onSearch(event: any) {
+			const e = event as UniInputEvent
+			this.keyword = e.detail.value
 		},
-		methods: {
 			optionValue(o: UTSJSONObject): string {
 				return o.getString('value') ?? ''
 			},
@@ -178,6 +211,24 @@
 		}
 	}
 
+	.m-up-search-wrap {
+		padding: 16rpx 24rpx;
+		border-bottom: 1rpx solid #F0F0F0;
+
+		.m-up-search {
+			height: 64rpx;
+			background-color: #F5F6FA;
+			border-radius: 12rpx;
+			padding: 0 24rpx;
+			font-size: 26rpx;
+		}
+	}
+
+	.m-up-search-ph {
+		color: #BBBBBB;
+		font-size: 26rpx;
+	}
+
 	.m-up-list {
 		height: 640rpx;
 	}
@@ -192,6 +243,12 @@
 			font-size: 28rpx;
 			color: #333333;
 			margin-left: 12rpx;
+		}
+
+		.m-up-row-desc {
+			font-size: 24rpx;
+			color: #999999;
+			margin-left: 16rpx;
 		}
 	}
 

@@ -21,7 +21,7 @@
 					<text class="m-timeline-meta">{{item.getString('finishTime') ?? ''}}</text>
 				</view>
 				<view class="m-timeline-comment" v-if="commentText(item) != ''">
-					<text class="m-timeline-comment-text">"{{commentText(item)}}"</text>
+					<text class="m-timeline-comment-text">{{commentText(item)}}</text>
 				</view>
 			</view>
 		</view>

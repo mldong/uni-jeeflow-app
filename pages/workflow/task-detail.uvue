@@ -138,7 +138,7 @@
 	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm, buildInitiatorExtraFields, applyFieldPermissions, withProcessFormPrefix } from '@/util/form_schemas.uts'
 	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processTaskCandidatePage, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
-	import { userSelectRows } from '@/api/user.uts'
+	import { userPage } from '@/api/user.uts'
 	import { uploadFile } from '@/api/file.uts'
 
 	export default {
@@ -525,11 +525,26 @@
 				})
 			},
 			loadUsers() {
-				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
-				userSelectRows().then((rows) => {
+				// 抄送/加签数据源切 /sys/user/page（对齐 vben UserSelect 抽屉：行含 deptName 供搜索+部门名展示）
+				userPage({
+					pageNum: 1,
+					pageSize: 200
+				} as UTSJSONObject).then((res) => {
+					const resObj = res as UTSJSONObject
+					const rows = resObj != null ? resObj!.getArray<UTSJSONObject>('rows') : null
 					this.users = [] as UTSJSONObject[]
-					for (let i = 0; i < rows.length; i++) {
-						this.users.push(rows[i])
+					if (rows != null) {
+						for (let i = 0; i < rows!.length; i++) {
+							const id = rows![i].getString('id') ?? ''
+							if (id.length == 0) {
+								continue
+							}
+							this.users.push({
+								label: rows![i].getString('realName') ?? id,
+								value: id,
+								desc: rows![i].getString('deptName') ?? ''
+							} as UTSJSONObject)
+						}
 					}
 					// 选人弹层已打开时补选项（用户列表异步晚于弹层）
 					if (this.pickerVisible && this.pickerSource != 'next') {
