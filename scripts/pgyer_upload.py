@@ -78,17 +78,30 @@ def main():
     upload_cos(d["endpoint"], d["params"], apk)
     print("cos upload ok")
 
-    r3 = post_form(f"{API}/app/buildInfo", {"_api_key": api_key, "buildKey": d["key"]})
-    if r3.get("code") != 0:
+    # 刚传完会报 code 1247「App is being processed」，需轮询直到 code 0（v0.1.3 实弹：
+    # 首调即 1247，20s 后 code 0）；最多等 15 分钟
+    import time
+    r3 = None
+    for i in range(45):
+        r3 = post_form(f"{API}/app/buildInfo", {"_api_key": api_key, "buildKey": d["key"]})
+        if r3.get("code") == 0:
+            break
+        if i < 44:
+            print(f"buildInfo code={r3.get('code')}，20s 后重试（{i + 1}/45）")
+            time.sleep(20)
+    if r3 is None or r3.get("code") != 0:
         raise SystemExit("buildInfo failed: " + json.dumps(r3, ensure_ascii=False))
     b = r3.get("data", {})
+    # 版本字段三分（勿混）：buildVersion=versionName / buildVersionNo=versionCode（升级判定看它）
+    # / buildBuildVersion=蒲公英侧上传计数
     print(
-        "buildInfo ok: v{}({}) buildKey={} shortcut={} url={}".format(
+        "buildInfo ok: v{}(versionCode {}) pgyer-#{}/{} isLastest={} shortcut={}".format(
             b.get("buildVersion"),
+            b.get("buildVersionNo"),
             b.get("buildBuildVersion"),
             b.get("buildKey"),
+            b.get("buildIsLastest"),
             b.get("buildShortcutUrl"),
-            b.get("buildURL"),
         )
     )
 
