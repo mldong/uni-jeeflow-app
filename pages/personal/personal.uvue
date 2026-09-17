@@ -5,7 +5,7 @@
 		</template>
 	</m-navigation-bar>
 	<!-- #ifdef APP -->
-	<scroll-view style="flex:1;background-color: #F5F6FA;">
+	<scroll-view :scroll-y="true" style="flex:1;background-color: #F5F6FA;">
 	<!-- #endif -->
 		<view class="m-info row h-192 align-items-flex-center bg-white">
 			<view class="m-avatar w-160 h-160 ml-20 bra-80">

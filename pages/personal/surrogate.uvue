@@ -11,7 +11,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+		<scroll-view :scroll-y="true" style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
 			@refresherrefresh="handleRefresherrefresh">
 		<!-- #endif -->
 			<view class="m-sg-list" v-if="list.length > 0">
@@ -198,49 +198,58 @@
 	}
 </script>
 <style lang="less">
-.m-sg-list{
-	padding: 20rpx;
-	.m-sg-item{
+	.m-sg-list {
+		padding: 20rpx;
+	}
+
+	.m-sg-item {
 		flex-direction: row;
 		align-items: center;
 		background-color: #ffffff;
 		border-radius: 16rpx;
 		padding: 28rpx 24rpx;
 		margin-bottom: 20rpx;
-		.m-sg-info{
-			flex: 1;
-			.m-sg-title-row{
-				flex-direction: row;
-				align-items: center;
-				justify-content: space-between;
-				.m-sg-name{
-					font-size: 30rpx;
-					font-weight: bold;
-					color: #333333;
-				}
-				.m-sg-enabled{
-					font-size: 22rpx;
-				}
-			}
-			.m-sg-meta{
-				margin-top: 8rpx;
-				font-size: 22rpx;
-				color: #999999;
-			}
-		}
-		.m-sg-del{
-			width: 64rpx;
-			height: 88rpx;
-			justify-content: center;
-			align-items: center;
-		}
 	}
-}
-.m-sg-tip{
-	padding: 0 30rpx;
-	.m-sg-tip-text{
+
+	.m-sg-info {
+		flex: 1;
+	}
+
+	.m-sg-title-row {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.m-sg-name {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-sg-enabled {
+		font-size: 22rpx;
+	}
+
+	.m-sg-meta {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #999999;
+	}
+
+	.m-sg-del {
+		width: 64rpx;
+		height: 88rpx;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.m-sg-tip {
+		padding: 0 30rpx;
+	}
+
+	.m-sg-tip-text {
 		font-size: 22rpx;
 		color: #BBBBBB;
 	}
-}
 </style>

@@ -29,6 +29,9 @@
 </script>
 
 <style lang="scss">
+	// 样式隔离 2.0：组件不再自动继承全局工具类，自行导入（编译期展开，无运行时开销）
+	@import url("@/static/css/common.less");
+
 .m-empty-text{
 	font-size: 28rpx;
 	color: #999999;

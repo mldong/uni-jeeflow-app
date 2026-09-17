@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;">
+		<scroll-view :scroll-y="true" style="flex:1;">
 		<!-- #endif -->
 			<view class="m-form-card">
 				<!-- 流程 -->
@@ -293,42 +293,49 @@
 	}
 </script>
 <style lang="less">
-.m-form-card{
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	margin: 20rpx;
-	padding: 10rpx 24rpx;
-	.m-row{
+	.m-form-card {
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin: 20rpx;
+		padding: 10rpx 24rpx;
+	}
+
+	.m-row {
 		flex-direction: row;
 		align-items: center;
 		height: 100rpx;
 		border-bottom: 1rpx solid #F0F0F0;
-		.m-row-label{
-			width: 170rpx;
-			font-size: 28rpx;
-			color: #333333;
-		}
-		.m-row-value{
-			flex: 1;
-			flex-direction: row;
-			align-items: center;
-			padding-right: 12rpx;
-			.m-row-text{
-				font-size: 28rpx;
-				color: #333333;
-			}
-			.m-row-placeholder{
-				font-size: 28rpx;
-				color: #BBBBBB;
-			}
-		}
 	}
-}
-.m-submit-wrap{
-	padding: 20rpx 40rpx 60rpx 40rpx;
-	.m-submit-btn{
+
+	.m-row-label {
+		width: 170rpx;
+		font-size: 28rpx;
+		color: #333333;
+	}
+
+	.m-row-value {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		padding-right: 12rpx;
+	}
+
+	.m-row-text {
+		font-size: 28rpx;
+		color: #333333;
+	}
+
+	.m-row-placeholder {
+		font-size: 28rpx;
+		color: #BBBBBB;
+	}
+
+	.m-submit-wrap {
+		padding: 20rpx 40rpx 60rpx 40rpx;
+	}
+
+	.m-submit-btn {
 		background-color: #2563EB;
 		border-radius: 12rpx;
 	}
-}
 </style>

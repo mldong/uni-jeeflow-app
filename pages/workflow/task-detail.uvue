@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;">
+		<scroll-view :scroll-y="true" style="flex:1;">
 		<!-- #endif -->
 			<!-- 流程信息 -->
 			<view class="m-card">
@@ -64,7 +64,7 @@
 						<view class="m-opt-check-box" :style="checkStyle(isAssignNext)">
 							<text v-if="isAssignNext" class="m-opt-check-mark">✓</text>
 						</view>
-						<text class="m-opt-label">指定下一节点处理人</text>
+						<text class="m-opt-label" style="margin-left: 12rpx;">指定下一节点处理人</text>
 					</view>
 				</view>
 				<view class="m-opt-pick" v-if="isAssignNext && !isCountersign" @tap="openPicker('next')">
@@ -76,7 +76,7 @@
 						<view class="m-opt-check-box" :style="checkStyle(isCc)">
 							<text v-if="isCc" class="m-opt-check-mark">✓</text>
 						</view>
-						<text class="m-opt-label">抄送</text>
+						<text class="m-opt-label" style="margin-left: 12rpx;">抄送</text>
 					</view>
 				</view>
 				<view class="m-opt-pick" v-if="isCc" @tap="openPicker('cc')">
@@ -113,17 +113,18 @@
 		<view class="m-approve-bar" v-if="executable">
 			<input class="m-approve-input" v-model="comment" placeholder="请输入审批意见" placeholder-class="m-form-placeholder" />
 			<view class="m-approve-btns" v-if="isFirstTaskNode">
-				<button class="m-btn m-btn-agree" @tap="doExecute(0)">重新提交</button>
+				<!-- 蒸汽模式：原 ：first-child 去边距改内联（运行时不支持伪类） -->
+				<button class="m-btn m-btn-agree" style="margin-left: 0;" @tap="doExecute(0)">重新提交</button>
 			</view>
-			<!-- 会签：同意 / 不同意(20) / 加签 -->
-			<view class="m-approve-btns" v-else-if="isCountersign">
-				<button class="m-btn m-btn-more" @tap="onAddSign">加签</button>
-				<button class="m-btn m-btn-reject" @tap="doExecute(20)">不同意</button>
-				<button class="m-btn m-btn-agree" @tap="doExecute(1)">同意</button>
-			</view>
-			<!-- 普通：不同意(2) / 更多(退回) / 同意 -->
-			<view class="m-approve-btns" v-else>
-				<button class="m-btn m-btn-more" @tap="onMoreActions">更多</button>
+				<!-- 会签：同意 / 不同意(20) / 加签 -->
+				<view class="m-approve-btns" v-else-if="isCountersign">
+					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333; flex: 0.7;" @tap="onAddSign">加签</button>
+					<button class="m-btn m-btn-reject" @tap="doExecute(20)">不同意</button>
+					<button class="m-btn m-btn-agree" @tap="doExecute(1)">同意</button>
+				</view>
+				<!-- 普通：不同意(2) / 更多(退回) / 同意 -->
+				<view class="m-approve-btns" v-else>
+					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333; flex: 0.7;" @tap="onMoreActions">更多</button>
 				<button class="m-btn m-btn-reject" @tap="doExecute(2)">不同意</button>
 				<button class="m-btn m-btn-agree" @tap="doExecute(1)">同意</button>
 			</view>
@@ -710,110 +711,123 @@
 	}
 </script>
 <style lang="less">
-.m-records-loading{
-	padding: 24rpx 0;
-	align-items: center;
-	.m-records-loading-text{
+	// 蒸汽模式压平：仅简单 class 选择器；首按钮去边距 / check 内 label 边距 / 更多按钮深色字均改模板内联 style
+	.m-records-loading {
+		padding: 24rpx 0;
+		align-items: center;
+	}
+
+	.m-records-loading-text {
 		font-size: 24rpx;
 		color: #BBBBBB;
 	}
-}
-.m-card{
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	margin: 20rpx;
-	padding: 24rpx;
-	.m-card-title{
-		margin-bottom: 12rpx;
-		.m-card-title-text{
-			font-size: 30rpx;
-			font-weight: bold;
-			color: #333333;
-		}
+
+	.m-card {
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin: 20rpx;
+		padding: 24rpx;
 	}
-	.m-card-title-row{
+
+	// 两个标题语境（.m-card-title / .m-card-title-row）原属性完全一致，合并为单类
+	.m-card-title {
+		margin-bottom: 12rpx;
+	}
+
+	.m-card-title-row {
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 12rpx;
-		.m-card-title-text{
-			font-size: 30rpx;
-			font-weight: bold;
-			color: #333333;
-		}
-		.m-chart-legend{
-			font-size: 22rpx;
-			color: #BBBBBB;
-		}
 	}
-	.m-info-row{
+
+	.m-card-title-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-chart-legend {
+		font-size: 22rpx;
+		color: #BBBBBB;
+	}
+
+	.m-info-row {
 		flex-direction: row;
 		justify-content: space-between;
 		padding: 14rpx 0;
-		.m-info-label{
-			font-size: 26rpx;
-			color: #999999;
-		}
-		.m-info-value{
-			font-size: 26rpx;
-			color: #333333;
-			max-width: 460rpx;
-			text-align: right;
-		}
 	}
-}
-.m-form-placeholder{
-	font-size: 26rpx;
-	color: #BBBBBB;
-}
-.m-approve-bar{
-	background-color: #ffffff;
-	padding: 20rpx 24rpx;
-	.m-approve-input{
+
+	.m-info-label {
+		font-size: 26rpx;
+		color: #999999;
+	}
+
+	.m-info-value {
+		font-size: 26rpx;
+		color: #333333;
+		max-width: 460rpx;
+		text-align: right;
+	}
+
+	.m-form-placeholder {
+		font-size: 26rpx;
+		color: #BBBBBB;
+	}
+
+	.m-approve-bar {
+		background-color: #ffffff;
+		padding: 20rpx 24rpx;
+	}
+
+	.m-approve-input {
 		height: 72rpx;
 		background-color: #F5F6FA;
 		border-radius: 12rpx;
 		padding: 0 24rpx;
 		font-size: 26rpx;
 	}
-	.m-approve-btns{
+
+	.m-approve-btns {
 		flex-direction: row;
 		margin-top: 20rpx;
-		.m-btn{
-			flex: 1;
-			font-size: 28rpx;
-			border-radius: 12rpx;
-			color: #ffffff;
-			margin-left: 12rpx;
-		}
-		.m-btn:first-child{
-			margin-left: 0;
-		}
-		.m-btn-agree{
-			background-color: #2563EB;
-		}
-		.m-btn-reject{
-			background-color: #EF4444;
-		}
-		.m-btn-more{
-			background-color: #F5F6FA;
-			color: #333333;
-			flex: 0.7;
-		}
 	}
-}
-/* 审批选项（附件 / 指派 / 抄送）——顶层类，卡片在 .m-card 内，勿嵌进 .m-approve-bar
-   （uni-app x 编译后按祖先上下文串匹配，嵌错层级选择器命不中） */
-.m-opt-row{
-	flex-direction: row;
-	align-items: center;
-	justify-content: space-between;
-	padding: 16rpx 0;
-	.m-opt-label{
+
+	.m-btn {
+		flex: 1;
+		font-size: 28rpx;
+		border-radius: 12rpx;
+		color: #ffffff;
+		margin-left: 12rpx;
+	}
+
+	.m-btn-agree {
+		background-color: #2563EB;
+	}
+
+	.m-btn-reject {
+		background-color: #EF4444;
+	}
+
+	// 深色字由模板内联覆盖（与 .m-btn 的 color 白字冲突，不依赖规则顺序）
+	.m-btn-more {
+		background-color: #F5F6FA;
+	}
+
+	/* 审批选项（附件 / 指派 / 抄送）——顶层类 */
+	.m-opt-row {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 16rpx 0;
+	}
+
+	.m-opt-label {
 		font-size: 26rpx;
 		color: #333333;
 	}
-	.m-opt-upload{
+
+	.m-opt-upload {
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
@@ -821,51 +835,54 @@
 		height: 60rpx;
 		border: 1rpx dashed #2563EB;
 		border-radius: 8rpx;
-		.m-opt-upload-text{
-			margin-left: 8rpx;
-			font-size: 24rpx;
-			color: #2563EB;
-		}
 	}
-}
-.m-opt-file{
-	flex-direction: row;
-	align-items: center;
-	padding: 8rpx 0;
-	.m-opt-file-name{
+
+	.m-opt-upload-text {
+		margin-left: 8rpx;
+		font-size: 24rpx;
+		color: #2563EB;
+	}
+
+	.m-opt-file {
+		flex-direction: row;
+		align-items: center;
+		padding: 8rpx 0;
+	}
+
+	.m-opt-file-name {
 		margin-left: 8rpx;
 		font-size: 24rpx;
 		color: #666666;
 	}
-}
-.m-opt-check{
-	flex: 1;
-	flex-direction: row;
-	align-items: center;
-	.m-opt-check-box{
+
+	.m-opt-check {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.m-opt-check-box {
 		width: 34rpx;
 		height: 34rpx;
 		border: 2rpx solid #CCCCCC;
 		border-radius: 6rpx;
 		justify-content: center;
 		align-items: center;
-		.m-opt-check-mark{
-			color: #ffffff;
-			font-size: 22rpx;
-		}
 	}
-	.m-opt-label{
-		margin-left: 12rpx;
-		font-size: 26rpx;
-		color: #333333;
+
+	.m-opt-check-mark {
+		color: #ffffff;
+		font-size: 22rpx;
 	}
-}
-.m-opt-pick{
-	flex-direction: row;
-	align-items: center;
-	justify-content: flex-end;
-	padding: 8rpx 0 16rpx 46rpx;
-	.m-opt-pick-value{
+
+	.m-opt-pick {
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-end;
+		padding: 8rpx 0 16rpx 46rpx;
+	}
+
+	.m-opt-pick-value {
 		font-size: 26rpx;
 		color: #333333;
 		flex: 1;
@@ -873,12 +890,12 @@
 		text-align: right;
 		lines: 2;
 	}
-	.m-opt-pick-placeholder{
+
+	.m-opt-pick-placeholder {
 		font-size: 26rpx;
 		color: #BBBBBB;
 		flex: 1;
 		margin-right: 12rpx;
 		text-align: right;
 	}
-}
 </style>

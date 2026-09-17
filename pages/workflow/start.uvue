@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+		<scroll-view :scroll-y="true" style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
 			@refresherrefresh="handleRefresherrefresh" @scrolltolower="loadMore">
 		<!-- #endif -->
 			<view class="m-define-list" v-if="defines.length > 0">
@@ -119,37 +119,42 @@
 	}
 </script>
 <style lang="less">
-.m-define-list{
-	padding: 20rpx;
-	.m-define-item{
+	.m-define-list {
+		padding: 20rpx;
+	}
+
+	.m-define-item {
 		flex-direction: row;
 		align-items: center;
 		background-color: #ffffff;
 		border-radius: 16rpx;
 		padding: 28rpx 24rpx;
 		margin-bottom: 20rpx;
-		.m-define-icon{
-			width: 80rpx;
-			height: 80rpx;
-			border-radius: 16rpx;
-			background-color: #2563EB;
-			justify-content: center;
-			align-items: center;
-		}
-		.m-define-info{
-			flex: 1;
-			margin-left: 20rpx;
-			.m-define-name{
-				font-size: 30rpx;
-				font-weight: bold;
-				color: #333333;
-			}
-			.m-define-meta{
-				margin-top: 8rpx;
-				font-size: 22rpx;
-				color: #999999;
-			}
-		}
 	}
-}
+
+	.m-define-icon {
+		width: 80rpx;
+		height: 80rpx;
+		border-radius: 16rpx;
+		background-color: #2563EB;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.m-define-info {
+		flex: 1;
+		margin-left: 20rpx;
+	}
+
+	.m-define-name {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-define-meta {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #999999;
+	}
 </style>

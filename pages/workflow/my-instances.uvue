@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+		<scroll-view :scroll-y="true" style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
 			@refresherrefresh="handleRefresherrefresh" @scrolltolower="loadMore">
 		<!-- #endif -->
 			<view class="m-inst-list" v-if="instances.length > 0">
@@ -23,10 +23,10 @@
 					</view>
 					<!-- 对齐 vben 列表操作：详情 / 抄送给 / 撤回(审批中) / 重新发起(已撤回) -->
 					<view class="m-inst-actions">
-						<text class="m-act m-act-muted" @tap="onTapItem(item)">详情</text>
+						<text class="m-act" style="color: #666666;" @tap="onTapItem(item)">详情</text>
 						<text class="m-act" @tap="onCreateCc(item)">抄送给</text>
-						<text class="m-act m-act-danger" v-if="canWithdraw(item)" @tap="onWithdraw(item)">撤回</text>
-						<text class="m-act m-act-primary" v-if="canRestart(item)" @tap="onRestart(item)">重新发起</text>
+						<text class="m-act" style="color: #EF4444;" v-if="canWithdraw(item)" @tap="onWithdraw(item)">撤回</text>
+						<text class="m-act" style="color: #2563EB; font-weight: bold;" v-if="canRestart(item)" @tap="onRestart(item)">重新发起</text>
 					</view>
 				</view>
 				<view class="m-list-footer" v-if="instances.length >= recordCount">
@@ -307,85 +307,91 @@
 	}
 </script>
 <style lang="less">
-.m-inst-list{
-	padding: 20rpx;
-	.m-inst-card{
+	.m-inst-list {
+		padding: 20rpx;
+	}
+
+	.m-inst-card {
 		background-color: #ffffff;
 		border-radius: 16rpx;
 		margin-bottom: 20rpx;
 		overflow: hidden;
 	}
-	.m-inst-item{
+
+	.m-inst-item {
 		flex-direction: row;
 		align-items: center;
 		padding: 28rpx 24rpx 16rpx 24rpx;
-		.m-inst-info{
-			flex: 1;
-			.m-inst-title-row{
-				flex-direction: row;
-				align-items: center;
-				justify-content: space-between;
-				.m-inst-name{
-					font-size: 30rpx;
-					font-weight: bold;
-					color: #333333;
-					flex: 1;
-					margin-right: 12rpx;
-				}
-				.m-inst-state{
-					font-size: 22rpx;
-					padding: 2rpx 12rpx;
-					border-radius: 8rpx;
-					border-width: 1rpx;
-					border-style: solid;
-				}
-			}
-			.m-inst-meta{
-				margin-top: 8rpx;
-				font-size: 22rpx;
-				color: #999999;
-			}
-		}
 	}
-	.m-inst-actions{
+
+	.m-inst-info {
+		flex: 1;
+	}
+
+	.m-inst-title-row {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.m-inst-name {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+		flex: 1;
+		margin-right: 12rpx;
+	}
+
+	.m-inst-state {
+		font-size: 22rpx;
+		padding: 2rpx 12rpx;
+		border-radius: 8rpx;
+		border-width: 1rpx;
+		border-style: solid;
+	}
+
+	.m-inst-meta {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #999999;
+	}
+
+	.m-inst-actions {
 		flex-direction: row;
 		justify-content: flex-end;
 		align-items: center;
 		padding: 8rpx 16rpx 20rpx 16rpx;
 		border-top: 1rpx solid #F5F5F5;
-		.m-act{
-			font-size: 26rpx;
-			color: #2563EB;
-			padding: 12rpx 16rpx;
-		}
-		.m-act-muted{
-			color: #666666;
-		}
-		.m-act-danger{
-			color: #EF4444;
-		}
-		.m-act-primary{
-			color: #2563EB;
-			font-weight: bold;
-		}
 	}
-	.m-list-footer{
+
+	.m-act {
+		font-size: 26rpx;
+		color: #2563EB;
+		padding: 12rpx 16rpx;
+	}
+
+
+
+
+	.m-list-footer {
 		justify-content: center;
 		align-items: center;
 		padding: 20rpx;
-		.m-list-footer-text{
-			font-size: 24rpx;
-			color: #BBBBBB;
-		}
 	}
-}
-.m-load-error{
-	justify-content: center;
-	align-items: center;
-	padding: 80rpx 20rpx;
-	.m-load-error-text{
+
+	.m-list-footer-text {
+		font-size: 24rpx;
+		color: #BBBBBB;
+	}
+
+	.m-load-error {
+		justify-content: center;
+		align-items: center;
+		padding: 80rpx 20rpx;
+	}
+
+	.m-load-error-text {
 		font-size: 26rpx;
 		color: #EF4444;
 	}
-}
 </style>

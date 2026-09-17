@@ -2,12 +2,14 @@
 	<view class="m-schema-form">
 		<view class="m-form-row" v-for="(field, index) in mFields" :key="field.field">
 			<!-- 只读展示（查看模式 / 字段级只读）：label + 值文本 -->
-			<view class="m-form-row-inner m-form-row-inner--readonly" v-if="readonly || field.readonly">
-				<view class="m-form-label">
-					<text class="m-form-label-text">{{field.label}}</text>
-					<text class="m-form-required" v-if="field.required && !readonly">*</text>
-				</view>
-				<view class="m-form-control">
+			<view class="m-form-row-inner m-form-row-inner--readonly" v-if="readonly || field.readonly"
+					style="align-items: center;">
+					<!-- 蒸汽模式：只读态覆盖走内联 style（运行时不再支持后代选择器覆盖） -->
+					<view class="m-form-label" style="padding-top: 0;">
+						<text class="m-form-label-text">{{field.label}}</text>
+						<text class="m-form-required" v-if="field.required && !readonly">*</text>
+					</view>
+					<view class="m-form-control" style="align-items: flex-end; justify-content: center;">
 					<text class="m-form-value-text">{{displayText(field)}}</text>
 				</view>
 			</view>
@@ -420,109 +422,114 @@
 </script>
 
 <style lang="less">
-.m-schema-form{
-	.m-form-row{
+	// 蒸汽模式压平：仅简单 class 选择器（原嵌套 less 编译出的后代选择器运行时不再支持）
+	.m-form-row {
 		border-bottom: 1rpx solid #F0F0F0;
-		.m-form-row-inner{
-			flex-direction: row;
-			align-items: flex-start;
-			padding: 20rpx 0;
-			.m-form-label{
-				width: 170rpx;
-				flex-direction: row;
-				padding-top: 20rpx;
-				.m-form-label-text{
-					font-size: 28rpx;
-					color: #333333;
-				}
-				.m-form-required{
-					color: #EF4444;
-					margin-left: 4rpx;
-					font-size: 28rpx;
-				}
-			}
-			.m-form-control{
-				flex: 1;
-				.m-form-input{
-					height: 72rpx;
-					font-size: 28rpx;
-					color: #333333;
-				}
-				.m-form-textarea{
-					height: 140rpx;
-					font-size: 28rpx;
-					color: #333333;
-				}
-				.m-form-picker{
-					flex-direction: row;
-					align-items: center;
-					justify-content: space-between;
-					height: 72rpx;
-				}
-				.m-form-value-text{
-					font-size: 28rpx;
-					color: #333333;
-					text-align: right;
-					lines: 0;
-				}
-				.m-form-placeholder{
-					font-size: 28rpx;
-					color: #BBBBBB;
-				}
-				.m-form-option-group{
-					flex-direction: row;
-					flex-wrap: wrap;
-					padding-top: 12rpx;
-					.m-form-option{
-						flex-direction: row;
-						align-items: center;
-						margin-right: 24rpx;
-						margin-bottom: 12rpx;
-						.m-form-option-text{
-							font-size: 26rpx;
-							color: #333333;
-						}
-					}
-				}
-				.m-form-upload{
-					.m-upload-btn{
-						flex-direction: row;
-						align-items: center;
-						justify-content: center;
-						width: 200rpx;
-						height: 72rpx;
-						border: 1rpx dashed #2563EB;
-						border-radius: 8rpx;
-						.m-upload-btn-text{
-							margin-left: 8rpx;
-							font-size: 24rpx;
-							color: #2563EB;
-						}
-					}
-					.m-upload-file{
-						flex-direction: row;
-						align-items: center;
-						margin-top: 12rpx;
-						.m-upload-file-name{
-							margin-left: 8rpx;
-							font-size: 24rpx;
-							color: #666666;
-						}
-					}
-				}
-			}
-		}
-		/* 只读行：label/值垂直居中（编辑态 label 的 padding-top 是为了对齐 72rpx 输入框） */
-		.m-form-row-inner--readonly{
-			align-items: center;
-			.m-form-label{
-				padding-top: 0;
-			}
-			.m-form-control{
-				align-items: flex-end;
-				justify-content: center;
-			}
-		}
 	}
-}
+
+	.m-form-row-inner {
+		flex-direction: row;
+		align-items: flex-start;
+		padding: 20rpx 0;
+	}
+
+	// 只读行容器：垂直居中由模板内联 style 覆盖（双类同属性冲突在蒸汽下不依赖规则顺序）
+
+	.m-form-label {
+		width: 170rpx;
+		flex-direction: row;
+		padding-top: 20rpx;
+	}
+
+	.m-form-label-text {
+		font-size: 28rpx;
+		color: #333333;
+	}
+
+	.m-form-required {
+		color: #EF4444;
+		margin-left: 4rpx;
+		font-size: 28rpx;
+	}
+
+	.m-form-control {
+		flex: 1;
+	}
+
+	.m-form-input {
+		height: 72rpx;
+		font-size: 28rpx;
+		color: #333333;
+	}
+
+	.m-form-textarea {
+		height: 140rpx;
+		font-size: 28rpx;
+		color: #333333;
+	}
+
+	.m-form-picker {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		height: 72rpx;
+	}
+
+	.m-form-value-text {
+		font-size: 28rpx;
+		color: #333333;
+		text-align: right;
+		lines: 0;
+	}
+
+	.m-form-placeholder {
+		font-size: 28rpx;
+		color: #BBBBBB;
+	}
+
+	.m-form-option-group {
+		flex-direction: row;
+		flex-wrap: wrap;
+		padding-top: 12rpx;
+	}
+
+	.m-form-option {
+		flex-direction: row;
+		align-items: center;
+		margin-right: 24rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.m-form-option-text {
+		font-size: 26rpx;
+		color: #333333;
+	}
+
+	.m-upload-btn {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		width: 200rpx;
+		height: 72rpx;
+		border: 1rpx dashed #2563EB;
+		border-radius: 8rpx;
+	}
+
+	.m-upload-btn-text {
+		margin-left: 8rpx;
+		font-size: 24rpx;
+		color: #2563EB;
+	}
+
+	.m-upload-file {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 12rpx;
+	}
+
+	.m-upload-file-name {
+		margin-left: 8rpx;
+		font-size: 24rpx;
+		color: #666666;
+	}
 </style>

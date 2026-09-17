@@ -12,7 +12,7 @@
 			</view>
 		</view>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
+		<scroll-view :scroll-y="true" style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
 			@refresherrefresh="handleRefresherrefresh" @scrolltolower="loadMore">
 		<!-- #endif -->
 			<!-- 待办列表 -->
@@ -39,7 +39,7 @@
 			<template v-else-if="currentTab == 1">
 				<view class="m-task-list" v-if="doneList.length > 0">
 					<view class="m-task-item" v-for="(item, index) in doneList" :key="index" @tap="onTapDone(item)">
-						<view class="m-task-badge m-task-badge-done"></view>
+						<view class="m-task-badge" style="background-color: #16A34A;"></view>
 						<view class="m-task-info">
 						<text class="m-task-name">{{item.getString('displayName') ?? ''}}</text>
 						<text class="m-task-meta">{{item.getString('processDefineDisplayName') ?? ''}} · {{applicantName(item)}} · {{fmtTime(item.getString('finishTime') ?? '')}}</text>
@@ -59,7 +59,7 @@
 			<template v-else>
 				<view class="m-task-list" v-if="ccList.length > 0">
 					<view class="m-task-item" v-for="(item, index) in ccList" :key="index" @tap="onTapCc(item)">
-						<view class="m-task-badge m-task-badge-cc"></view>
+						<view class="m-task-badge" style="background-color: #8B5CF6;"></view>
 						<view class="m-task-info">
 							<text class="m-task-name">{{item.getString('displayName') ?? ''}}</text>
 							<text class="m-task-meta">{{item.getString('processDefineDisplayName') ?? ''}} · {{applicantName(item)}} · {{fmtTime(item.getString('createTime') ?? '')}}</text>
@@ -343,90 +343,101 @@
 	}
 </script>
 <style lang="less">
-.m-seg-row{
-	flex-direction: row;
-	background-color: #ffffff;
-	padding: 16rpx 20rpx;
-	.m-seg{
+	.m-seg-row {
+		flex-direction: row;
+		background-color: #ffffff;
+		padding: 16rpx 20rpx;
+	}
+
+	.m-seg {
 		flex: 1;
 		height: 64rpx;
 		border-radius: 32rpx;
 		justify-content: center;
 		align-items: center;
 	}
-	.m-seg-active{
+
+	.m-seg-active {
 		background-color: #2563EB;
 	}
-	.m-seg-text{
+
+	.m-seg-text {
 		font-size: 28rpx;
 		color: #666666;
 	}
-	.m-seg-text-active{
+
+	.m-seg-text-active {
 		font-size: 28rpx;
 		color: #ffffff;
 		font-weight: bold;
 	}
-}
-.m-task-list{
-	padding: 20rpx;
-	.m-task-item{
+
+	.m-task-list {
+		padding: 20rpx;
+	}
+
+	.m-task-item {
 		flex-direction: row;
 		align-items: center;
 		background-color: #ffffff;
 		border-radius: 16rpx;
 		padding: 28rpx 24rpx;
 		margin-bottom: 20rpx;
-		.m-task-badge{
-			width: 16rpx;
-			height: 16rpx;
-			border-radius: 8rpx;
-			background-color: #F59E0B;
-		}
-		.m-task-badge-done{
-			background-color: #16A34A;
-		}
-		.m-task-badge-cc{
-			background-color: #8B5CF6;
-		}
-		.m-task-info{
-			flex: 1;
-			margin-left: 20rpx;
-			.m-task-name{
-				font-size: 30rpx;
-				font-weight: bold;
-				color: #333333;
-			}
-			.m-task-meta{
-				margin-top: 8rpx;
-				font-size: 22rpx;
-				color: #999999;
-			}
-		}
-		.m-cc-flag{
-			font-size: 20rpx;
-			color: #ffffff;
-			background-color: #8B5CF6;
-			padding: 2rpx 10rpx;
-			border-radius: 8rpx;
-		}
 	}
-	.m-list-footer{
+
+	.m-task-badge {
+		width: 16rpx;
+		height: 16rpx;
+		border-radius: 8rpx;
+		background-color: #F59E0B;
+	}
+
+
+
+	.m-task-info {
+		flex: 1;
+		margin-left: 20rpx;
+	}
+
+	.m-task-name {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-task-meta {
+		margin-top: 8rpx;
+		font-size: 22rpx;
+		color: #999999;
+	}
+
+	.m-cc-flag {
+		font-size: 20rpx;
+		color: #ffffff;
+		background-color: #8B5CF6;
+		padding: 2rpx 10rpx;
+		border-radius: 8rpx;
+	}
+
+	.m-list-footer {
 		justify-content: center;
 		align-items: center;
 		padding: 20rpx;
-		.m-list-footer-text{
-			font-size: 24rpx;
-			color: #BBBBBB;
-		}
 	}
-}
-.m-load-error{
-	justify-content: center;
-	align-items: center;
-	padding: 80rpx 20rpx;
-	.m-load-error-text{
+
+	.m-list-footer-text {
+		font-size: 24rpx;
+		color: #BBBBBB;
+	}
+
+	.m-load-error {
+		justify-content: center;
+		align-items: center;
+		padding: 80rpx 20rpx;
+	}
+
+	.m-load-error-text {
 		font-size: 26rpx;
 		color: #EF4444;
 	}
-}
 </style>

@@ -86,69 +86,76 @@
 </script>
 
 <style lang="less">
-.m-bar-list{
-	.m-bar-list-title{
+	.m-bar-list-title {
 		flex-direction: row;
 		align-items: center;
 		margin-bottom: 16rpx;
-		.m-bar-list-title-text{
-			font-size: 28rpx;
-			font-weight: bold;
-			color: #333333;
-		}
-		.m-bar-list-unit{
-			margin-left: 12rpx;
-			font-size: 20rpx;
-			color: #999999;
-		}
 	}
-	.m-bar-list-empty{
+
+	.m-bar-list-title-text {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-bar-list-unit {
+		margin-left: 12rpx;
+		font-size: 20rpx;
+		color: #999999;
+	}
+
+	.m-bar-list-empty {
 		padding: 24rpx 0;
 		align-items: center;
-		.m-bar-list-empty-text{
-			font-size: 24rpx;
-			color: #BBBBBB;
-		}
 	}
-	.m-bar-list-rows{
-		.m-bar-list-row{
-			flex-direction: row;
-			align-items: center;
-			margin-bottom: 16rpx;
-			.m-bar-list-label{
-				width: 160rpx;
-				font-size: 24rpx;
-				lines: 1;
-				text-overflow: ellipsis;
-			}
-			.m-bar-list-track{
-				flex: 1;
-				height: 20rpx;
-				background-color: #F0F2F5;
-				border-radius: 10rpx;
-				margin: 0 16rpx;
-				.m-bar-list-fill{
-					height: 20rpx;
-					border-radius: 10rpx;
-				}
-			}
-			.m-bar-list-val-wrap{
-				width: 120rpx;
-				flex-direction: row;
-				align-items: flex-end;
-				justify-content: flex-end;
-				.m-bar-list-count{
-					font-size: 26rpx;
-					font-weight: bold;
-					color: #333333;
-				}
-				.m-bar-list-sub{
-					margin-left: 6rpx;
-					font-size: 18rpx;
-					color: #999999;
-				}
-			}
-		}
+
+	.m-bar-list-empty-text {
+		font-size: 24rpx;
+		color: #BBBBBB;
 	}
-}
+
+	.m-bar-list-row {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 16rpx;
+	}
+
+	.m-bar-list-label {
+		width: 160rpx;
+		font-size: 24rpx;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	.m-bar-list-track {
+		flex: 1;
+		height: 20rpx;
+		background-color: #F0F2F5;
+		border-radius: 10rpx;
+		margin: 0 16rpx;
+	}
+
+	.m-bar-list-fill {
+		height: 20rpx;
+		border-radius: 10rpx;
+	}
+
+	.m-bar-list-val-wrap {
+		width: 120rpx;
+		flex-direction: row;
+		align-items: flex-end;
+		justify-content: flex-end;
+	}
+
+	.m-bar-list-count {
+		font-size: 26rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-bar-list-sub {
+		margin-left: 6rpx;
+		font-size: 18rpx;
+		color: #999999;
+	}
 </style>

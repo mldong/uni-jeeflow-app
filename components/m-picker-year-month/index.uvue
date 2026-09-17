@@ -205,39 +205,44 @@
 </script>
 
 <style lang="less">
-.m-picker-wrap {
-	position: fixed;
-	bottom: 0;
-	background-color: white;
-	height: 0rpx;
-}
-.m-picker-btn{
-	flex-direction: row;
-	justify-content: space-between;
-	.m-btn{
+	.m-picker-wrap {
+		position: fixed;
+		bottom: 0;
+		background-color: white;
+		height: 0rpx;
+	}
+
+	.m-picker-btn {
+		flex-direction: row;
+		justify-content: space-between;
+	}
+
+	.m-btn {
 		width: 88rpx;
 		height: 48rpx;
 		justify-content: center;
 		align-items: center;
-		.m-btn-text{
-			color: #2563EB;
-		}
 	}
-}
-.picker-view {
-	width: 750rpx;
-	height: 320rpx;
-	margin-top: 10rpx;
+
+	.m-btn-text {
+		color: #2563EB;
+	}
+
+	.picker-view {
+		width: 750rpx;
+		height: 320rpx;
+		margin-top: 10rpx;
+	}
+
 	.item {
 		line-height: 50px;
 		text-align: center;
 		color: black;
 	}
-}
 
-.transition-height {
-  transition-property: height;
-  transition-duration: 0.6s;
-  transition-timing-function: ease-out;
-}
+	.transition-height {
+		transition-property: height;
+		transition-duration: 0.6s;
+		transition-timing-function: ease-out;
+	}
 </style>

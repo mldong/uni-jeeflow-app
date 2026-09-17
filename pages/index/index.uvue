@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered" @refresherrefresh="handleRefresherrefresh">
+		<scroll-view :scroll-y="true" style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered" @refresherrefresh="handleRefresherrefresh">
 		<!-- #endif -->
 			<!-- 一行摘要：替代顶部双大卡，减少与 Tab 角标重复 -->
 			<view class="m-summary">
@@ -519,186 +519,218 @@
 	}
 </script>
 <style lang="less">
-.m-summary{
-	flex-direction: row;
-	align-items: center;
-	margin: 20rpx;
-	padding: 20rpx 24rpx;
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	.m-summary-chip{
+	.m-summary {
 		flex-direction: row;
 		align-items: center;
-		.m-summary-chip-label{
-			font-size: 26rpx;
-			color: #666666;
-		}
-		.m-summary-chip-num{
-			margin-left: 8rpx;
-			font-size: 28rpx;
-			font-weight: bold;
-			color: #333333;
-		}
-		.m-summary-chip-num--hot{
-			color: #EF4444;
-		}
+		margin: 20rpx;
+		padding: 20rpx 24rpx;
+		background-color: #ffffff;
+		border-radius: 16rpx;
 	}
-	.m-summary-dot{
+
+	.m-summary-chip {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.m-summary-chip-label {
+		font-size: 26rpx;
+		color: #666666;
+	}
+
+	.m-summary-chip-num {
+		margin-left: 8rpx;
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-summary-chip-num--hot {
+		color: #EF4444;
+	}
+
+	.m-summary-dot {
 		width: 8rpx;
 		height: 8rpx;
 		border-radius: 4rpx;
 		background-color: #DDDDDD;
 		margin: 0 20rpx;
 	}
-	.m-summary-spacer{
+
+	.m-summary-spacer {
 		flex: 1;
 	}
-	.m-summary-link{
+
+	.m-summary-link {
 		flex-direction: row;
 		align-items: center;
 		margin-left: 16rpx;
-		.m-summary-link-text{
-			font-size: 24rpx;
-			color: #999999;
-		}
 	}
-}
-.m-section{
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	margin: 0 20rpx 20rpx 20rpx;
-	padding: 24rpx;
-	.m-section-title{
+
+	.m-summary-link-text {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.m-section {
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin: 0 20rpx 20rpx 20rpx;
+		padding: 24rpx;
+	}
+
+	.m-section-title {
 		flex-direction: row;
 		align-items: center;
 		margin-bottom: 16rpx;
-		.m-section-title-text{
-			font-size: 30rpx;
-			font-weight: bold;
-			color: #333333;
-		}
-		.m-section-hint{
-			margin-left: 12rpx;
-			font-size: 20rpx;
-			color: #F59E0B;
-			background-color: #FFFBEB;
-			padding: 2rpx 10rpx;
-			border-radius: 8rpx;
-		}
-		.m-section-more{
-			flex: 1;
-			flex-direction: row;
-			justify-content: flex-end;
-			align-items: center;
-			.m-section-more-text{
-				font-size: 24rpx;
-				color: #999999;
-			}
-		}
 	}
-	.m-group{
+
+	.m-section-title-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-section-hint {
+		margin-left: 12rpx;
+		font-size: 20rpx;
+		color: #F59E0B;
+		background-color: #FFFBEB;
+		padding: 2rpx 10rpx;
+		border-radius: 8rpx;
+	}
+
+	.m-section-more {
+		flex: 1;
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+	}
+
+	.m-section-more-text {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.m-group {
 		margin-bottom: 8rpx;
-		.m-group-title{
-			font-size: 24rpx;
-			color: #999999;
-			margin-bottom: 12rpx;
-			margin-top: 8rpx;
-		}
 	}
-	.m-quick-row{
+
+	.m-group-title {
+		font-size: 24rpx;
+		color: #999999;
+		margin-bottom: 12rpx;
+		margin-top: 8rpx;
+	}
+
+	.m-quick-row {
 		flex-direction: row;
 		flex-wrap: wrap;
-		.m-quick-item{
-			width: 25%;
-			justify-content: center;
-			align-items: center;
-			padding: 12rpx 8rpx 16rpx 8rpx;
-		}
-		.m-grid-icon{
-			width: 72rpx;
-			height: 72rpx;
-			border-radius: 18rpx;
-			justify-content: center;
-			align-items: center;
-		}
-		.m-grid-label{
-			margin-top: 10rpx;
-			font-size: 22rpx;
-			color: #555555;
-			text-align: center;
-			lines: 2;
-		}
 	}
-	.m-empty-hint{
+
+	.m-quick-item {
+		width: 25%;
+		justify-content: center;
+		align-items: center;
+		padding: 12rpx 8rpx 16rpx 8rpx;
+	}
+
+	.m-grid-icon {
+		width: 72rpx;
+		height: 72rpx;
+		border-radius: 18rpx;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.m-grid-label {
+		margin-top: 10rpx;
+		font-size: 22rpx;
+		color: #555555;
+		text-align: center;
+		lines: 2;
+	}
+
+	.m-empty-hint {
 		padding: 24rpx 0 12rpx 0;
 		align-items: center;
-		.m-empty-hint-text{
-			font-size: 24rpx;
-			color: #BBBBBB;
-		}
 	}
-	.m-load-error{
+
+	.m-empty-hint-text {
+		font-size: 24rpx;
+		color: #BBBBBB;
+	}
+
+	.m-load-error {
 		justify-content: center;
 		align-items: center;
 		padding: 40rpx 20rpx;
-		.m-load-error-text{
-			font-size: 24rpx;
-			color: #EF4444;
-		}
 	}
-	.m-skel-grid{
+
+	.m-load-error-text {
+		font-size: 24rpx;
+		color: #EF4444;
+	}
+
+	.m-skel-grid {
 		flex-direction: row;
 		flex-wrap: wrap;
 		justify-content: space-between;
 		padding: 10rpx 0;
-		.m-skel-item{
-			width: 150rpx;
-			align-items: center;
-			.m-skel-icon{
-				width: 96rpx;
-				height: 96rpx;
-				border-radius: 24rpx;
-				background-color: #E5E8EF;
-			}
-			.m-skel-bar{
-				width: 96rpx;
-				height: 28rpx;
-				border-radius: 8rpx;
-				background-color: #E5E8EF;
-				margin-top: 16rpx;
-			}
-		}
 	}
-	.m-recent-list{
-		.m-recent-item{
-			flex-direction: row;
-			align-items: center;
-			padding: 20rpx 0;
-			border-bottom: 1rpx solid #F0F0F0;
-			.m-recent-main{
-				flex: 1;
-				.m-recent-name{
-					font-size: 28rpx;
-					color: #333333;
-					font-weight: bold;
-				}
-				.m-recent-meta{
-					margin-top: 6rpx;
-					font-size: 22rpx;
-					color: #999999;
-				}
-			}
-			.m-recent-state{
-				font-size: 22rpx;
-				padding: 2rpx 12rpx;
-				border-radius: 8rpx;
-				border-width: 1rpx;
-				border-style: solid;
-				margin-left: 16rpx;
-			}
-		}
+
+	.m-skel-item {
+		width: 150rpx;
+		align-items: center;
 	}
+
+	.m-skel-icon {
+		width: 96rpx;
+		height: 96rpx;
+		border-radius: 24rpx;
+		background-color: #E5E8EF;
 	}
+
+	.m-skel-bar {
+		width: 96rpx;
+		height: 28rpx;
+		border-radius: 8rpx;
+		background-color: #E5E8EF;
+		margin-top: 16rpx;
+	}
+
+	.m-recent-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom: 1rpx solid #F0F0F0;
+	}
+
+	.m-recent-main {
+		flex: 1;
+	}
+
+	.m-recent-name {
+		font-size: 28rpx;
+		color: #333333;
+		font-weight: bold;
+	}
+
+	.m-recent-meta {
+		margin-top: 6rpx;
+		font-size: 22rpx;
+		color: #999999;
+	}
+
+	.m-recent-state {
+		font-size: 22rpx;
+		padding: 2rpx 12rpx;
+		border-radius: 8rpx;
+		border-width: 1rpx;
+		border-style: solid;
+		margin-left: 16rpx;
+	}
+
 	.m-indicators {
 		flex-direction: row;
 		background-color: #FFFFFF;
@@ -709,15 +741,18 @@
 		padding-top: 24rpx;
 		padding-bottom: 24rpx;
 	}
+
 	.m-indicator-item {
 		flex: 1;
 		align-items: center;
 	}
+
 	.m-indicator-num {
 		font-size: 30rpx;
 		font-weight: bold;
 		color: #333333;
 	}
+
 	.m-indicator-label {
 		font-size: 22rpx;
 		color: #999999;

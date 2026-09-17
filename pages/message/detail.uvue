@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;">
+		<scroll-view :scroll-y="true" style="flex:1;">
 		<!-- #endif -->
 			<view class="m-card" v-if="loaded">
 				<view class="m-type-row">

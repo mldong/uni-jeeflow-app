@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;">
+		<scroll-view :scroll-y="true" style="flex:1;">
 		<!-- #endif -->
 			<view class="m-form-card">
 				<m-schema-form ref="schemaForm" :fields="schemaFields" :formData="formData" :readonly="false"
@@ -219,21 +219,21 @@
 	}
 </script>
 <style lang="less">
-.m-form-card{
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	margin: 20rpx;
-	padding: 10rpx 24rpx;
-}
-.m-submit-bar{
-	background-color: #ffffff;
-	/* uni-app x 不支持 calc(env())，底部留白给足（含手势条区域余量） */
-	padding: 20rpx 24rpx 70rpx;
-	.m-submit-btn{
+	.m-form-card {
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin: 20rpx;
+		padding: 10rpx 24rpx;
+	}
+
+	.m-submit-bar {
+		background-color: #ffffff;
+	}
+
+	.m-submit-btn {
 		background-color: #2563EB;
 		border-radius: 12rpx;
 		font-size: 28rpx;
 		color: #ffffff;
 	}
-}
 </style>

@@ -26,7 +26,7 @@
 						<text class="mfn-tool-text">＋</text>
 					</view>
 					<view class="mfn-tool-btn" @tap="openFullscreen">
-						<text class="mfn-tool-text mfn-tool-text--ico">⛶</text>
+						<text class="mfn-tool-text" style="font-size: 28rpx;">⛶</text>
 					</view>
 				</view>
 			</view>
@@ -73,7 +73,7 @@
 					<text class="mfn-tool-text">＋</text>
 				</view>
 				<view class="mfn-tool-btn" @tap="closeFullscreen">
-					<text class="mfn-tool-text mfn-tool-text--ico">✕</text>
+					<text class="mfn-tool-text" style="font-size: 28rpx;">✕</text>
 				</view>
 			</view>
 		</view>
@@ -394,67 +394,80 @@
 </script>
 
 <style lang="less">
-.mfn-wrap{
-	flex-direction: column;
-}
-// 工具条行：左图例右工具（文档流首行，uvue 绝对定位浮层收不到 tap）
-.mfn-toolbar-row{
-	flex-direction: row;
-	justify-content: space-between;
-	align-items: center;
-	padding: 8rpx 8rpx 0;
-}
-// 状态图例（色值对齐 m-flow-tree 节点彩条）
-.mfn-legend{
-	flex-direction: row;
-	align-items: center;
-	.mfn-legend-item{
+	.mfn-wrap {
+		flex-direction: column;
+	}
+
+	// 工具条行：左图例右工具（文档流首行，uvue 绝对定位浮层收不到 tap）
+	.mfn-toolbar-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8rpx 8rpx 0;
+	}
+
+	// 状态图例（色值对齐 m-flow-tree 节点彩条）
+	.mfn-legend {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.mfn-legend-item {
 		flex-direction: row;
 		align-items: center;
 		margin-right: 14rpx;
-		.mfn-legend-dot{
-			width: 16rpx;
-			height: 16rpx;
-			border-radius: 8rpx;
-			margin-right: 6rpx;
-		}
-		.mfn-legend-text{
-			font-size: 20rpx;
-			color: #999999;
-		}
 	}
-}
-// 内嵌滚动视口（高度由 embedScrollH 撑，封顶 1200rpx）
-.mfn-embed-scroll{
-	background-color: #FFFFFF;
-}
-// sizer：纯占位（给 scroll-view 撑出缩放后可滚动区域）
-.mfn-sizer{
-}
-// 宽度由 canvasStyle 显式声明（内嵌=卡片宽/全屏=max(750,内容宽)），不用 min-width（会顶回 750 导致内嵌偏右）
-.mfn-canvas{
-	flex-direction: column;
-	align-items: center;
-	padding: 20rpx 40rpx 40rpx;
-}
-.mfn-empty{
-	padding: 60rpx 0;
-	align-items: center;
-	.mfn-empty-text{
+
+	.mfn-legend-dot {
+		width: 16rpx;
+		height: 16rpx;
+		border-radius: 8rpx;
+		margin-right: 6rpx;
+	}
+
+	.mfn-legend-text {
+		font-size: 20rpx;
+		color: #999999;
+	}
+
+	// 内嵌滚动视口（高度由 embedScrollH 撑，封顶 1200rpx）
+	.mfn-embed-scroll {
+		background-color: #FFFFFF;
+	}
+
+	// sizer：纯占位（给 scroll-view 撑出缩放后可滚动区域）
+	.mfn-sizer {
+	}
+
+	// 宽度由 canvasStyle 显式声明（内嵌=卡片宽/全屏=max(750,内容宽)），不用 min-width（会顶回 750 导致内嵌偏右）
+	.mfn-canvas {
+		flex-direction: column;
+		align-items: center;
+		padding: 20rpx 40rpx 40rpx;
+	}
+
+	.mfn-empty {
+		padding: 60rpx 0;
+		align-items: center;
+	}
+
+	.mfn-empty-text {
 		font-size: 24rpx;
 		color: #BBBBBB;
 	}
-}
-// 工具条（内嵌=文档流行内右对齐；全屏=头部右侧）
-.mfn-tools{
-	flex-direction: row;
-	align-items: center;
-	background-color: #FFFFFF;
-	border-radius: 32rpx;
-	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.12);
-	padding: 6rpx 10rpx;
+
+	// 工具条（内嵌=文档流行内右对齐；全屏=头部右侧）
+	.mfn-tools {
+		flex-direction: row;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-radius: 32rpx;
+		box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.12);
+		padding: 6rpx 10rpx;
+	}
+
 	// 必须带背景色：uvue(Android) 透明 view 点击穿透，事件到不了 @tap
-	.mfn-tool-btn{
+	.mfn-tool-btn {
 		width: 56rpx;
 		height: 56rpx;
 		justify-content: center;
@@ -462,47 +475,53 @@
 		border-radius: 28rpx;
 		background-color: #FFFFFF;
 	}
-	.mfn-tool-text{
+
+	.mfn-tool-text {
 		font-size: 32rpx;
 		color: #666666;
 		line-height: 1;
 	}
-	.mfn-tool-text--ico{
-		font-size: 28rpx;
-	}
-	.mfn-tool-percent{
+
+	// 全屏/退出按钮字号 28rpx 由模板内联覆盖（原 --ico 修饰类与基础类同属性冲突，蒸汽下不依赖顺序）
+
+	.mfn-tool-percent {
 		font-size: 24rpx;
 		color: #333333;
 		margin: 0 6rpx;
 	}
-}
-// 全屏头部：回到文档流（uvue 无 position: static，用 relative + 零偏移）
-.mfn-tools--full{
-	position: relative;
-	top: 0;
-	right: 0;
-}
-// 全屏头部图例：夹在标题与工具之间居中
-.mfn-legend--full{
-	flex: 1;
-	justify-content: center;
-	margin: 0 12rpx;
-}
-// 全屏遮罩
-.mfn-full{
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background-color: #F0F2F5;
-	z-index: 999;
-	flex-direction: column;
-	.mfn-full-statusbar{
+
+	// 全屏头部：回到文档流（uvue 无 position: static，用 relative + 零偏移）
+	.mfn-tools--full {
+		position: relative;
+		top: 0;
+		right: 0;
+	}
+
+	// 全屏头部图例：夹在标题与工具之间居中
+	.mfn-legend--full {
+		flex: 1;
+		justify-content: center;
+		margin: 0 12rpx;
+	}
+
+	// 全屏遮罩
+	.mfn-full {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #F0F2F5;
+		z-index: 999;
+		flex-direction: column;
+	}
+
+	.mfn-full-statusbar {
 		flex-shrink: 0;
 		background-color: #FFFFFF;
 	}
-	.mfn-full-head{
+
+	.mfn-full-head {
 		flex-shrink: 0;
 		flex-direction: row;
 		align-items: center;
@@ -512,24 +531,24 @@
 		border-bottom-width: 2rpx;
 		border-bottom-style: solid;
 		border-bottom-color: #E8E8E8;
-		.mfn-full-title{
-			.mfn-full-title-text{
-				font-size: 32rpx;
-				font-weight: bold;
-				color: #333333;
-			}
-		}
 	}
+
+	.mfn-full-title-text {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
 	// 必须带背景色：透明 view 收不到 touch 事件（双指捏合依赖）
-	.mfn-full-body{
+	.mfn-full-body {
 		flex: 1;
 		overflow: hidden;
 		justify-content: center;
 		align-items: center;
 		background-color: #F0F2F5;
-		.mfn-full-scroll{
-			background-color: #F0F2F5;
-		}
 	}
-}
+
+	.mfn-full-scroll {
+		background-color: #F0F2F5;
+	}
 </style>

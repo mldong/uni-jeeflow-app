@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered" @refresherrefresh="handleRefresherrefresh">
+		<scroll-view :scroll-y="true" style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered" @refresherrefresh="handleRefresherrefresh">
 		<!-- #endif -->
 			<!-- 指标卡区：6 张 + 质量行 -->
 			<view class="m-stats-grid">
@@ -415,11 +415,13 @@
 </script>
 
 <style lang="less">
-.m-stats-grid{
-	flex-direction: row;
-	flex-wrap: wrap;
-	margin: 20rpx 20rpx 0 20rpx;
-	.m-stats-card{
+	.m-stats-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin: 20rpx 20rpx 0 20rpx;
+	}
+
+	.m-stats-card {
 		width: 48%;
 		align-items: center;
 		padding: 28rpx 16rpx;
@@ -427,83 +429,94 @@
 		border-radius: 16rpx;
 		box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
 		margin: 0 1% 16rpx 1%;
-		.m-stats-card-num{
-			font-size: 48rpx;
-			font-weight: bold;
-			color: #333333;
-		}
-		.m-stats-card-label{
-			font-size: 24rpx;
-			color: #666666;
-			margin-top: 8rpx;
-		}
 	}
-}
-.m-quality-row{
-	flex-direction: row;
-	flex-wrap: wrap;
-	align-items: center;
-	margin: 0 20rpx 16rpx 20rpx;
-	padding: 16rpx 20rpx;
-	background-color: #ffffff;
-	border-radius: 12rpx;
-	.m-quality-item{
+
+	.m-stats-card-num {
+		font-size: 48rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-stats-card-label {
+		font-size: 24rpx;
+		color: #666666;
+		margin-top: 8rpx;
+	}
+
+	.m-quality-row {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		margin: 0 20rpx 16rpx 20rpx;
+		padding: 16rpx 20rpx;
+		background-color: #ffffff;
+		border-radius: 12rpx;
+	}
+
+	.m-quality-item {
 		font-size: 20rpx;
 		color: #666666;
 	}
-	.m-quality-dot{
+
+	.m-quality-dot {
 		width: 6rpx;
 		height: 6rpx;
 		border-radius: 3rpx;
 		background-color: #DDDDDD;
 		margin: 0 16rpx;
 	}
-}
-.m-section{
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	margin: 0 20rpx 20rpx 20rpx;
-	padding: 24rpx;
-	.m-section-title{
+
+	.m-section {
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin: 0 20rpx 20rpx 20rpx;
+		padding: 24rpx;
+	}
+
+	.m-section-title {
 		flex-direction: row;
 		align-items: center;
 		margin-bottom: 16rpx;
-		.m-section-title-text{
-			font-size: 30rpx;
-			font-weight: bold;
-			color: #333333;
-		}
 	}
-}
-.m-seg{
-	flex-direction: row;
-	margin-bottom: 20rpx;
-	background-color: #F0F2F5;
-	border-radius: 16rpx;
-	padding: 6rpx;
-	.m-seg-item{
+
+	.m-section-title-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-seg {
+		flex-direction: row;
+		margin-bottom: 20rpx;
+		background-color: #F0F2F5;
+		border-radius: 16rpx;
+		padding: 6rpx;
+	}
+
+	.m-seg-item {
 		flex: 1;
 		align-items: center;
 		justify-content: center;
 		padding: 14rpx 0;
 		border-radius: 12rpx;
-		.m-seg-text{
-			font-size: 26rpx;
-			color: #666666;
-		}
 	}
-	.m-seg-item--active{
-		/* 文字色/字重走模板内联 :style（见模板注释）；此处只管容器底色与阴影 */
-		background-color: #2563EB;
+
+	.m-seg-text {
+		font-size: 26rpx;
+		color: #666666;
+	}
+
+	.m-seg-item--active {
 		box-shadow: 0 2rpx 8rpx rgba(37, 99, 235, 0.3);
 	}
-}
-.m-empty-hint{
-	padding: 24rpx 0 12rpx 0;
-	align-items: center;
-	.m-empty-hint-text{
+
+	.m-empty-hint {
+		padding: 24rpx 0 12rpx 0;
+		align-items: center;
+	}
+
+	.m-empty-hint-text {
 		font-size: 24rpx;
 		color: #BBBBBB;
 	}
-}
 </style>

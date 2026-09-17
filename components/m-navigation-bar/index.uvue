@@ -113,43 +113,48 @@
 </script>
 
 <style lang="less">
-.m-status-bar {
-        height: var(--status-bar-height);
-        width: 100%;
+	.m-status-bar {
+		height: var(--status-bar-height);
+		width: 100%;
 		background-color: #2563EB;
-		.m-status-bar-inner{
-			flex: 1;
-			background-color: black;
-			opacity: 0.2;
-		}
-    }
-	.m-app-bar{
+	}
+
+	.m-status-bar-inner {
+		flex: 1;
+		background-color: black;
+		opacity: 0.2;
+	}
+
+	.m-app-bar {
 		height: 88rpx;
 		background-color: #2563EB;
 		flex-direction: row;
-		.m-back-icon{
-			width: 64rpx;
-			height: 88rpx;
-			align-items: center;
-			justify-content: center;
-			position: absolute;
-			z-index: 999;
-			left: 0rpx;
-		}
-		.m-title{
-			flex: 1;
-			flex-direction: row;
-			height: 88rpx;
-			align-items: center;
-		}
-		.m-more{
-			width: 64rpx;
-			height: 88rpx;
-			align-items: center;
-			justify-content: center;
-			position: absolute;
-			right: 0rpx;
-			z-index: 999;
-		}
+	}
+
+	.m-back-icon {
+		width: 64rpx;
+		height: 88rpx;
+		align-items: center;
+		justify-content: center;
+		position: absolute;
+		z-index: 999;
+		left: 0rpx;
+	}
+
+	.m-title {
+		flex: 1;
+		flex-direction: row;
+		height: 88rpx;
+		align-items: center;
+	}
+
+	.m-more {
+		width: 64rpx;
+		height: 88rpx;
+		align-items: center;
+		justify-content: center;
+		position: absolute;
+		right: 0rpx;
+		z-index: 999;
 	}
 </style>

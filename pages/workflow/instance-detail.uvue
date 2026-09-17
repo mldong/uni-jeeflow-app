@@ -6,7 +6,7 @@
 			</template>
 		</m-navigation-bar>
 		<!-- #ifdef APP -->
-		<scroll-view style="flex:1;">
+		<scroll-view :scroll-y="true" style="flex:1;">
 		<!-- #endif -->
 			<!-- 流程信息 -->
 			<view class="m-card">
@@ -362,69 +362,81 @@
 	}
 </script>
 <style lang="less">
-.m-card{
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	margin: 20rpx;
-	padding: 24rpx;
-	.m-card-title-row{
+	.m-card {
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin: 20rpx;
+		padding: 24rpx;
+	}
+
+	.m-card-title-row {
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 12rpx;
-		.m-card-title-text{
-			font-size: 30rpx;
-			font-weight: bold;
-			color: #333333;
-		}
-		.m-chart-legend{
-			font-size: 20rpx;
-			color: #BBBBBB;
-		}
-		.m-state-tag{
-			font-size: 22rpx;
-			color: #ffffff;
-			padding: 4rpx 16rpx;
-			border-radius: 8rpx;
-		}
 	}
-	.m-info-row{
+
+	.m-card-title-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.m-chart-legend {
+		font-size: 20rpx;
+		color: #BBBBBB;
+	}
+
+	.m-state-tag {
+		font-size: 22rpx;
+		color: #ffffff;
+		padding: 4rpx 16rpx;
+		border-radius: 8rpx;
+	}
+
+	.m-info-row {
 		flex-direction: row;
 		justify-content: space-between;
 		padding: 14rpx 0;
-		.m-info-label{
-			font-size: 26rpx;
-			color: #999999;
-		}
-		.m-info-value{
-			font-size: 26rpx;
-			color: #333333;
-			max-width: 460rpx;
-			text-align: right;
-		}
 	}
-}
-.m-action-bar{
-	background-color: #ffffff;
-	padding: 20rpx 24rpx;
-	flex-direction: row;
-	.m-action-btn{
+
+	.m-info-label {
+		font-size: 26rpx;
+		color: #999999;
+	}
+
+	.m-info-value {
+		font-size: 26rpx;
+		color: #333333;
+		max-width: 460rpx;
+		text-align: right;
+	}
+
+	.m-action-bar {
+		background-color: #ffffff;
+		padding: 20rpx 24rpx;
+		flex-direction: row;
+	}
+
+	.m-action-btn {
 		flex: 1;
 		border-radius: 12rpx;
 		font-size: 28rpx;
 		margin: 0 8rpx;
 	}
-	.m-action-btn--ghost{
+
+	.m-action-btn--ghost {
 		background-color: #F5F6FA;
 		color: #333333;
 	}
-	.m-action-btn--danger{
+
+	.m-action-btn--danger {
 		background-color: #EF4444;
 		color: #ffffff;
 	}
-	.m-action-btn--primary{
+
+	.m-action-btn--primary {
 		background-color: #2563EB;
 		color: #ffffff;
 	}
-}
 </style>

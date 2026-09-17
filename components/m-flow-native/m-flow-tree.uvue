@@ -296,234 +296,271 @@
 </script>
 
 <style lang="less">
-.mft-chain{
-	flex-direction: column;
-	align-items: center;
-}
-// 节点间竖线（原生不支持 background repeat 虚线，降级实线）
-.mft-line{
-	width: 4rpx;
-	height: 44rpx;
-	background-color: #B8BDC4;
-}
-.mft-line--active{
-	background-color: #3068EC;
-}
-.mft-line--history{
-	background-color: #67C23A;
-}
-// 开始/结束胶囊
-.mft-pill{
-	width: 200rpx;
-	height: 64rpx;
-	border-radius: 32rpx;
-	justify-content: center;
-	align-items: center;
-	.mft-pill-text{
+	.mft-chain {
+		flex-direction: column;
+		align-items: center;
+	}
+
+	// 节点间竖线（原生不支持 background repeat 虚线，降级实线）
+	.mft-line {
+		width: 4rpx;
+		height: 44rpx;
+		background-color: #B8BDC4;
+	}
+
+	.mft-line--active {
+		background-color: #3068EC;
+	}
+
+	.mft-line--history {
+		background-color: #67C23A;
+	}
+
+	// 开始/结束胶囊
+	.mft-pill {
+		width: 200rpx;
+		height: 64rpx;
+		border-radius: 32rpx;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.mft-pill-text {
 		font-size: 28rpx;
 		font-weight: 500;
 		color: #FFFFFF;
 	}
-}
-.mft-pill--start{
-	background-color: #67C23A;
-}
-.mft-pill--end{
-	background-color: #909399;
-}
-// 合并节点（join）虚线框
-.mft-join{
-	flex-direction: column;
-	align-items: center;
-	margin: 8rpx 0;
-	padding: 20rpx 24rpx;
-	border-width: 2rpx;
-	border-style: dashed;
-	border-color: #F59E0B;
-	border-radius: 12rpx;
-	background-color: #FFFBEB;
-	.mft-join-inner{
+
+	.mft-pill--start {
+		background-color: #67C23A;
+	}
+
+	.mft-pill--end {
+		background-color: #909399;
+	}
+
+	// 合并节点（join）虚线框
+	.mft-join {
+		flex-direction: column;
+		align-items: center;
+		margin: 8rpx 0;
+		padding: 20rpx 24rpx;
+		border-width: 2rpx;
+		border-style: dashed;
+		border-color: #F59E0B;
+		border-radius: 12rpx;
+		background-color: #FFFBEB;
+	}
+
+	.mft-join-inner {
 		flex-direction: row;
 		align-items: center;
 		padding: 8rpx 24rpx;
 		border-radius: 28rpx;
 		background-color: #FEF3C7;
-		.mft-join-dot{
-			width: 12rpx;
-			height: 12rpx;
-			border-radius: 6rpx;
-			background-color: #F59E0B;
-			margin-right: 12rpx;
-		}
-		.mft-join-name{
-			font-size: 24rpx;
-			font-weight: 500;
-			color: #D97706;
-		}
 	}
-}
-// 任务卡片
-.mft-card{
-	position: relative;
-	width: 300rpx;
-	border-radius: 12rpx;
-	background-color: #FFFFFF;
-	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
-	overflow: hidden;
-	.mft-card-bar{
+
+	.mft-join-dot {
+		width: 12rpx;
+		height: 12rpx;
+		border-radius: 6rpx;
+		background-color: #F59E0B;
+		margin-right: 12rpx;
+	}
+
+	.mft-join-name {
+		font-size: 24rpx;
+		font-weight: 500;
+		color: #D97706;
+	}
+
+	// 任务卡片
+	.mft-card {
+		position: relative;
+		width: 300rpx;
+		border-radius: 12rpx;
+		background-color: #FFFFFF;
+		box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+		overflow: hidden;
+	}
+
+	.mft-card-bar {
 		position: absolute;
 		left: 0;
 		top: 0;
 		bottom: 0;
 		width: 6rpx;
 	}
-	.mft-card-header{
+
+	.mft-card-header {
 		flex-direction: row;
 		align-items: center;
 		padding: 14rpx 16rpx 4rpx 20rpx;
-		.mft-card-icon{
-			font-size: 24rpx;
-			font-weight: 600;
-			color: #1890FF;
-			margin-right: 8rpx;
-		}
-		.mft-card-title{
-			flex: 1;
-			font-size: 22rpx;
-			color: #999999;
-			lines: 1;
-			text-overflow: ellipsis;
-		}
-		.mft-card-badge{
-			font-size: 18rpx;
-			color: #FFFFFF;
-			padding: 2rpx 12rpx;
-			border-radius: 14rpx;
-			margin-left: 8rpx;
-		}
 	}
-	.mft-card-body{
+
+	.mft-card-icon {
+		font-size: 24rpx;
+		font-weight: 600;
+		color: #1890FF;
+		margin-right: 8rpx;
+	}
+
+	.mft-card-title {
+		flex: 1;
+		font-size: 22rpx;
+		color: #999999;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	.mft-card-badge {
+		font-size: 18rpx;
+		color: #FFFFFF;
+		padding: 2rpx 12rpx;
+		border-radius: 14rpx;
+		margin-left: 8rpx;
+	}
+
+	.mft-card-body {
 		padding: 4rpx 16rpx 16rpx 20rpx;
-		.mft-card-body-text{
-			font-size: 26rpx;
-			font-weight: 600;
-			color: #333333;
-			lines: 1;
-			text-overflow: ellipsis;
-		}
 	}
-	.mft-card-members{
+
+	.mft-card-body-text {
+		font-size: 26rpx;
+		font-weight: 600;
+		color: #333333;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	.mft-card-members {
 		flex-direction: column;
 		padding: 0 16rpx 14rpx 20rpx;
-		.mft-member{
-			flex-direction: row;
-			align-items: center;
-			margin-top: 6rpx;
-			.mft-member-mark{
-				width: 28rpx;
-				height: 28rpx;
-				border-radius: 14rpx;
-				justify-content: center;
-				align-items: center;
-				margin-right: 10rpx;
-				.mft-member-mark-text{
-					font-size: 18rpx;
-					line-height: 1;
-				}
-			}
-			.mft-member-name{
-				flex: 1;
-				font-size: 22rpx;
-				lines: 1;
-				text-overflow: ellipsis;
-			}
-		}
 	}
-}
-// 高亮描边（active 橙 / history 绿）：border 替代 box-shadow spread
-// （Android box-shadow 扩散渲染有四角断缝/边缘空隙）；border 与左侧彩条同色紧贴无缝
-.mft-card--active{
-	border-width: 4rpx;
-	border-style: solid;
-	border-color: #FF8C00;
-	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
-}
-.mft-card--history{
-	border-width: 4rpx;
-	border-style: solid;
-	border-color: #52C41A;
-	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
-}
-// 条件/并行分支组
-.mft-cond{
-	flex-direction: column;
-	align-items: center;
-	margin: 8rpx 0;
-	border-width: 2rpx;
-	border-style: dashed;
-	border-color: #DFE1E6;
-	border-radius: 12rpx;
-	background-color: #F7F8FA;
-	.mft-cond-header{
+
+	.mft-member {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 6rpx;
+	}
+
+	.mft-member-mark {
+		width: 28rpx;
+		height: 28rpx;
+		border-radius: 14rpx;
+		justify-content: center;
+		align-items: center;
+		margin-right: 10rpx;
+	}
+
+	.mft-member-mark-text {
+		font-size: 18rpx;
+		line-height: 1;
+	}
+
+	.mft-member-name {
+		flex: 1;
+		font-size: 22rpx;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	// 高亮描边（active 橙 / history 绿）：border 替代 box-shadow spread
+	// （Android box-shadow 扩散渲染有四角断缝/边缘空隙）；border 与左侧彩条同色紧贴无缝
+.mft-card--active {
+		border-width: 4rpx;
+		border-style: solid;
+		border-color: #FF8C00;
+		box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+	}
+
+	.mft-card--history {
+		border-width: 4rpx;
+		border-style: solid;
+		border-color: #52C41A;
+		box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+	}
+
+	// 条件/并行分支组
+	.mft-cond {
+		flex-direction: column;
+		align-items: center;
+		margin: 8rpx 0;
+		border-width: 2rpx;
+		border-style: dashed;
+		border-color: #DFE1E6;
+		border-radius: 12rpx;
+		background-color: #F7F8FA;
+	}
+
+	.mft-cond-header {
 		align-self: center;
 		margin-top: 16rpx;
 		margin-bottom: 16rpx;
-		.mft-cond-title{
-			font-size: 22rpx;
-			font-weight: 500;
-			color: #999999;
-			background-color: #F7F8FA;
-			border-width: 2rpx;
-			border-style: solid;
-			border-color: #E8E8E8;
-			border-radius: 16rpx;
-			padding: 4rpx 20rpx;
-		}
 	}
-}
-.mft-cond-scroll{
-	width: 100%;
-}
-.mft-branches{
-	position: relative;
-	flex-direction: row;
-	align-items: flex-start;
-	padding: 0 10rpx;
-}
-// 顶/底横线（absolute 定位，宽度由列数算术得出）
-.mft-hline{
-	position: absolute;
-	height: 4rpx;
-	background-color: #B8BDC4;
-}
-.mft-hline--top{
-	top: 0;
-}
-.mft-hline--bottom{
-	bottom: 0;
-}
-// 分支列
-.mft-col{
-	width: 320rpx;
-	flex-direction: column;
-	align-items: center;
-	flex-shrink: 0;
-	.mft-col-name{
+
+	.mft-cond-title {
+		font-size: 22rpx;
+		font-weight: 500;
+		color: #999999;
+		background-color: #F7F8FA;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #E8E8E8;
+		border-radius: 16rpx;
+		padding: 4rpx 20rpx;
+	}
+
+	.mft-cond-scroll {
+		width: 100%;
+	}
+
+	.mft-branches {
+		position: relative;
+		flex-direction: row;
+		align-items: flex-start;
+		padding: 0 10rpx;
+	}
+
+	// 顶/底横线（absolute 定位，宽度由列数算术得出）
+	.mft-hline {
+		position: absolute;
+		height: 4rpx;
+		background-color: #B8BDC4;
+	}
+
+	.mft-hline--top {
+		top: 0;
+	}
+
+	.mft-hline--bottom {
+		bottom: 0;
+	}
+
+	// 分支列
+	.mft-col {
+		width: 320rpx;
+		flex-direction: column;
+		align-items: center;
+		flex-shrink: 0;
+	}
+
+	.mft-col-name {
 		margin-top: 2rpx;
 		margin-bottom: 12rpx;
 		max-width: 300rpx;
-		.mft-col-name-text{
-			font-size: 22rpx;
-			color: #666666;
-			background-color: #FFFFFF;
-			border-width: 2rpx;
-			border-style: solid;
-			border-color: #E8E8E8;
-			border-radius: 10rpx;
-			padding: 4rpx 14rpx;
-			lines: 1;
-			text-overflow: ellipsis;
-		}
 	}
-}
+
+	.mft-col-name-text {
+		font-size: 22rpx;
+		color: #666666;
+		background-color: #FFFFFF;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #E8E8E8;
+		border-radius: 10rpx;
+		padding: 4rpx 14rpx;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
 </style>

@@ -87,59 +87,64 @@
 </script>
 
 <style lang="less">
-.m-mini-bars{
-	.m-mini-bars-legend{
+	.m-mini-bars-legend {
 		flex-direction: row;
 		margin-bottom: 16rpx;
-		.m-mini-bars-legend-item{
-			flex-direction: row;
-			align-items: center;
-			margin-right: 24rpx;
-			.m-mini-bars-legend-dot{
-				width: 16rpx;
-				height: 16rpx;
-				border-radius: 4rpx;
-				margin-right: 8rpx;
-			}
-			.m-mini-bars-legend-text{
-				font-size: 22rpx;
-				color: #666666;
-			}
-		}
-		.m-mini-bars-peak{
-			margin-left: auto;
-			font-size: 20rpx;
-			color: #BBBBBB;
-		}
 	}
-	.m-mini-bars-chart{
+
+	.m-mini-bars-legend-item {
+		flex-direction: row;
+		align-items: center;
+		margin-right: 24rpx;
+	}
+
+	.m-mini-bars-legend-dot {
+		width: 16rpx;
+		height: 16rpx;
+		border-radius: 4rpx;
+		margin-right: 8rpx;
+	}
+
+	.m-mini-bars-legend-text {
+		font-size: 22rpx;
+		color: #666666;
+	}
+
+	.m-mini-bars-peak {
+		margin-left: auto;
+		font-size: 20rpx;
+		color: #BBBBBB;
+	}
+
+	.m-mini-bars-chart {
 		flex-direction: row;
 		align-items: flex-end;
 		height: 200rpx;
-		// 底轴线：零值桶不再悬空无参照
-		border-bottom-width: 2rpx;
 		border-bottom-style: solid;
 		border-bottom-color: #E8E8E8;
-		.m-mini-bars-col{
-			flex: 1;
-			align-items: center;
-			.m-mini-bars-pair{
-				flex-direction: row;
-				align-items: flex-end;
-				height: 160rpx;
-				.m-mini-bars-bar{
-					width: 14rpx;
-					border-radius: 4rpx 4rpx 0 0;
-					margin: 0 2rpx;
-				}
-			}
-			.m-mini-bars-label{
-				margin-top: 8rpx;
-				font-size: 18rpx;
-				color: #999999;
-				lines: 1;
-			}
-		}
 	}
-}
+
+	.m-mini-bars-col {
+		flex: 1;
+		align-items: center;
+	}
+
+	.m-mini-bars-pair {
+		flex-direction: row;
+		align-items: flex-end;
+		height: 160rpx;
+	}
+
+	.m-mini-bars-bar {
+		width: 14rpx;
+		border-radius: 4rpx 4rpx 0 0;
+		margin: 0 2rpx;
+	}
+
+	.m-mini-bars-label {
+		margin-top: 8rpx;
+		font-size: 18rpx;
+		color: #999999;
+		lines: 1;
+	}
 </style>
