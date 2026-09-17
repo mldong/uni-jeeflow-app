@@ -79,15 +79,19 @@ def main():
     print("cos upload ok")
 
     # 刚传完会报 code 1247「App is being processed」，需轮询直到 code 0（v0.1.3 实弹：
-    # 首调即 1247，20s 后 code 0）；最多等 15 分钟
+    # 首调即 1247，20s 后 code 0）；最多等 15 分钟。
+    # 非 1247/0 的 code 视为真错误（如 buildKey 失效），立即退出，不空等 15 分钟。
     import time
     r3 = None
     for i in range(45):
         r3 = post_form(f"{API}/app/buildInfo", {"_api_key": api_key, "buildKey": d["key"]})
-        if r3.get("code") == 0:
+        c = r3.get("code")
+        if c == 0:
             break
+        if c != 1247:
+            raise SystemExit("buildInfo failed: " + json.dumps(r3, ensure_ascii=False))
         if i < 44:
-            print(f"buildInfo code={r3.get('code')}，20s 后重试（{i + 1}/45）")
+            print("buildInfo code=1247 解析中，20s 后重试（{}/45）".format(i + 1))
             time.sleep(20)
     if r3 is None or r3.get("code") != 0:
         raise SystemExit("buildInfo failed: " + json.dumps(r3, ensure_ascii=False))
