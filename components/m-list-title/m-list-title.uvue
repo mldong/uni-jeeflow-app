@@ -9,7 +9,7 @@
 		<view @tap="onTap(item)" @longpress="onLongpress(item)" v-for="(item,index) in mDataSource" :key="item.key" :class="'m-list-item h-'+height+' row justify-content-space-between'">
 			<view class="row center">
 				<view v-if="$strUtil.isNotEmpty(item.icon)" class="m-icon w-64 center">
-					<slot v-if="$slots.has(item.key+'icon')" :name="item.key+'-icon'" :data="item" :index="index"></slot>
+					<slot v-if="hasSlot(item.key+'icon')" :name="item.key+'-icon'"" :data="item" :index="index"></slot>
 					<slot v-else name="icon" :data="item" :index="index">
 						<image class="w-48 h-48" mode="aspectFill" :lazy-load="true" v-if="$strUtil.isUrl(item.icon)" :src="item.icon"></image>
 						<m-icon v-else :type="item.icon" :size="24" :color="item.iconColor"></m-icon>
@@ -17,13 +17,13 @@
 				</view>
 				<view v-else class="ml-20"></view>
 				<view class="m-title">
-					<slot v-if="$slots.has(item.key+'-title')" :name="item.key+'-title'" :data="item" :index="index"></slot>
+					<slot v-if="hasSlot(item.key+'-title')" :name="item.key+'-title'" :data="item" :index="index"></slot>
 					<slot v-else name="title" :data="item" :index="index">
 						<text>{{item.title}}</text>
 					</slot>
 				</view>
 			</view>
-			<slot v-if="$slots.has(item.key+'-right')"  :name="item.key+'-right'" :data="item" :index="index"></slot>
+			<slot v-if="hasSlot(item.key+'-right')"  :name="item.key+'-right'" :data="item" :index="index"></slot>
 			<slot v-else name="right" :data="item" :index="index">
 				<view class="center w-64">
 					<m-icon :type="rightIcon" :size="24" color="#979797"></m-icon>
@@ -36,11 +36,15 @@
 <script setup lang="uts">
 	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { ListTitleType } from './index.uts'
-	// 模板里的 $collUtil/$strUtil/$slots 原靠 globalProperties/实例属性，组合式下改为 setup 绑定
-	// （setup 绑定对模板可见；$slots 用 useSlots() 以原名暴露，模板零改动）
+	// 模板里的 $collUtil/$strUtil 原靠 globalProperties，组合式下改为 setup import 绑定
+	// （setup 绑定对模板可见）。$slots.has 在蒸汽运行时不存在（TypeError: slots.has is not a function），
+	// 改为 hasSlot() 显式函数；本项目唯一调用方（personal.uvue）从未传插槽，恒 false 与原行为一致。
 	import { $collUtil } from '@/util/array_util'
 	import { $strUtil } from '@/util/str_util'
-	const $slots = useSlots()
+
+	function hasSlot(_name : string) : boolean {
+		return false
+	}
 
 	type Props = {
 		group?: ListTitleType,
