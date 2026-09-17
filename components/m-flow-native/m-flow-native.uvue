@@ -1,0 +1,472 @@
+<template>
+	<!-- 内嵌形态：详情页流程图卡片（工具条走文档流首行右对齐，uvue 绝对定位浮层收不到 tap） -->
+		<view class="mfn-wrap" v-if="!fullscreen">
+			<view class="mfn-toolbar-row">
+				<view class="mfn-tools">
+					<view class="mfn-tool-btn" @tap="zoomOut">
+						<text class="mfn-tool-text">−</text>
+					</view>
+					<text class="mfn-tool-percent">{{zoomPercent}}</text>
+					<view class="mfn-tool-btn" @tap="zoomIn">
+						<text class="mfn-tool-text">＋</text>
+					</view>
+					<view class="mfn-tool-btn" @tap="openFullscreen">
+						<text class="mfn-tool-text mfn-tool-text--ico">⛶</text>
+					</view>
+				</view>
+			</view>
+			<scroll-view scroll-x scroll-y class="mfn-embed-scroll" :height="embedScrollH">
+				<!-- sizer 撑出"缩放后"的可滚动区域（transform 不改变布局尺寸，需显式占位） -->
+				<view class="mfn-sizer" :style="sizerStyle">
+					<!-- 内嵌态 canvas 宽 = 卡片实测宽（cardW），100% 时内容在卡片内严格居中 -->
+					<view class="mfn-canvas" :style="canvasStyle">
+						<m-flow-tree v-if="tree != null" :node="tree" :highLight="highLight" :activeNames="finalActive" :historyNames="finalHistory"></m-flow-tree>
+						<view v-else class="mfn-empty">
+							<text class="mfn-empty-text">{{graph == null ? '流程图加载中……' : '暂无流程数据'}}</text>
+						</view>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+	<!-- 全屏形态：fixed 遮罩（z-index 高于详情页审批栏） -->
+	<view class="mfn-full" v-else>
+		<view class="mfn-full-statusbar" :style="{height: statusBarHeight + 'px'}"></view>
+		<view class="mfn-full-head">
+			<view class="mfn-full-title">
+				<text class="mfn-full-title-text">流程图</text>
+			</view>
+			<view class="mfn-tools mfn-tools--full">
+				<view class="mfn-tool-btn" @tap="zoomOut">
+					<text class="mfn-tool-text">−</text>
+				</view>
+				<text class="mfn-tool-percent">{{zoomPercent}}</text>
+				<view class="mfn-tool-btn" @tap="zoomIn">
+					<text class="mfn-tool-text">＋</text>
+				</view>
+				<view class="mfn-tool-btn" @tap="closeFullscreen">
+					<text class="mfn-tool-text mfn-tool-text--ico">✕</text>
+				</view>
+			</view>
+		</view>
+		<view class="mfn-full-body"
+			@touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd" @touchcancel="onTouchEnd">
+			<scroll-view scroll-x scroll-y class="mfn-full-scroll">
+				<view class="mfn-sizer" :style="sizerStylePx">
+					<!-- 全屏态 canvas 宽 = max(750, 内容宽)：100% 时贴满屏宽居中 -->
+					<view class="mfn-canvas" :style="canvasStyle">
+						<m-flow-tree v-if="tree != null" :node="tree" :highLight="highLight" :activeNames="finalActive" :historyNames="finalHistory"></m-flow-tree>
+						<view v-else class="mfn-empty">
+							<text class="mfn-empty-text">暂无流程数据</text>
+						</view>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 流程图 · 原生渲染（替代 webview 方案）
+	 * graph（jsonObject）经 graphToTree 转树后由 m-flow-tree 递归渲染；
+	 * 内嵌/全屏共用同一 canvas：右上角 −/＋ 缩放（0.5~2.0）、全屏双指捏合。
+	 * props：graph（流程图 JSON）+ highLight（activeNodeNames/historyNodeNames/nodeProgress）
+	 * + activeNames/historyNames/historyEdges（highLight 缺失时兜底）。
+	 */
+	import { graphToTree, FlowNode } from '@/util/flow_converter.uts'
+	import mFlowTree from './m-flow-tree.uvue'
+
+	export default {
+		name: "m-flow-native",
+		components: {
+			mFlowTree
+		},
+		props: {
+			graph: {
+				type: Object as PropType<UTSJSONObject | null>,
+				default: null
+			},
+			// processInstance/highLight 完整响应（含 nodeProgress）
+			highLight: {
+				type: Object as PropType<UTSJSONObject | null>,
+				default: null
+			},
+			// 兼容旧调用（无 highLight 对象时兜底）
+			activeNames: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			},
+			historyNames: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			},
+			historyEdges: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			}
+		},
+		data() {
+			return {
+				fullscreen: false,
+				// 缩放 0.5~2.0（0.2 步进）
+				scale: 1.0,
+				// 打开全屏前的缩放（关闭时恢复）
+				prevScale: 1.0,
+				statusBarHeight: 20,
+				// rpx → px 换算（750rpx = 屏宽）
+				rpxScale: 0.5,
+				// 内嵌卡片内容区宽度（rpx，测工具条行得到；canvas 宽 = 它，100% 时严格居中）
+				cardW: 0,
+				// 内容未缩放高度（rpx，测量值；宽度纯算术不测，避免 stretch 正反馈）
+				contentH: 0,
+				// 双指捏合状态
+				pinchDist: 0,
+				pinchStartScale: 1.0
+			};
+		},
+		computed: {
+			// graph/highLight 任一到位即同步转树
+			tree(): FlowNode | null {
+				const g = this.graph
+				if (g == null) return null
+				const _hl = this.highLight
+				return graphToTree(g!)
+			},
+			hlActive(): string[] {
+				const hl = this.highLight
+				if (hl == null) return [] as string[]
+				const arr = hl!.getArray('activeNodeNames')
+				if (arr == null) return [] as string[]
+				const out: string[] = []
+				for (let i = 0; i < arr!.length; i++) {
+					const v = arr![i]
+					if (v != null) out.push(v.toString())
+				}
+				return out
+			},
+			hlHistory(): string[] {
+				const hl = this.highLight
+				if (hl == null) return [] as string[]
+				const arr = hl!.getArray('historyNodeNames')
+				if (arr == null) return [] as string[]
+				const out: string[] = []
+				for (let i = 0; i < arr!.length; i++) {
+					const v = arr![i]
+					if (v != null) out.push(v.toString())
+				}
+				return out
+			},
+			// 高亮节点 id 最终来源：整份 highLight 优先，兜底独立数组 prop
+			// （不能与 prop 同名：uvue 编译进同一 Kotlin 类会撞名）
+			finalActive(): string[] {
+				const a = this.hlActive
+				if (a.length > 0) return a
+				return this.activeNames
+			},
+			finalHistory(): string[] {
+				const h = this.hlHistory
+				if (h.length > 0) return h
+				return this.historyNames
+			},
+			zoomPercent(): string {
+				return Math.round(this.scale * 100).toString() + '%'
+			},
+			// 内容未缩放宽度（rpx，纯算术 + canvas 左右 padding 80）
+			// 不测量：canvas 在 scroll/sizer 里会被 stretch 撑宽，测出来会污染自身（正反馈）
+			baseW(): number {
+				const t = this.tree
+				const w = t == null ? 300 : this.maxBranchWidth(t!)
+				return w + 80
+			},
+			// canvas 宽度（rpx，未缩放）：内嵌 = 卡片实测宽（保证 100% 严格居中）；全屏 = max(750, 内容宽)
+			baseCanvasW(): number {
+				if (this.fullscreen) {
+					const w = this.baseW
+					return w > 750 ? w : 750
+				}
+				const cw = this.cardW
+				if (cw <= 0) return this.baseW
+				const bw = this.baseW
+				return cw > bw ? cw : bw
+			},
+			// canvas 内联样式：显式宽度 + transform（transformOrigin top left）
+			canvasStyle(): UTSJSONObject {
+				const w = this.baseCanvasW
+				return {
+					width: w.toFixed(0) + 'rpx',
+					transform: 'scale(' + this.scale + ')',
+					transformOrigin: 'top left'
+				} as UTSJSONObject
+			},
+			// 内嵌滚动视口高度：内容高 × 缩放，封顶 1200rpx（未测得时给兜底高度）
+			embedScrollH(): string {
+				const h = this.contentH * this.scale
+				if (h <= 0) return '400rpx'
+				const capped = h > 1200 ? 1200 : h
+				return capped.toFixed(0) + 'rpx'
+			},
+			// sizer：撑出"缩放后"可滚动区域（transform 不改变布局尺寸，必须显式占位）
+			sizerStyle(): UTSJSONObject {
+				const w = this.baseCanvasW * this.scale
+				const h = this.contentH * this.scale
+				const ws = w > 0 ? w.toFixed(0) + 'rpx' : '750rpx'
+				const hs = h > 0 ? h.toFixed(0) + 'rpx' : '400rpx'
+				return { width: ws, height: hs } as UTSJSONObject
+			},
+			// 全屏 sizer（px）
+			sizerStylePx(): UTSJSONObject {
+				const w = this.baseCanvasW * this.rpxScale * this.scale
+				const h = this.contentH * this.rpxScale * this.scale
+				const ws = w > 0 ? w.toFixed(1) + 'px' : '100%'
+				const hs = h > 0 ? h.toFixed(1) + 'px' : '100%'
+				return { width: ws, height: hs } as UTSJSONObject
+			}
+		},
+		watch: {
+			graph(_n) {
+				// 数据到位/变化后重测内容尺寸（缩放视口依赖）
+				this.$nextTick(() => {
+					this.measureCanvas()
+				})
+			}
+		},
+		mounted() {
+			try {
+				const info = uni.getSystemInfoSync()
+				this.statusBarHeight = info.statusBarHeight
+				this.rpxScale = info.windowWidth / 750
+			} catch (e) {
+				// 保持默认值
+			}
+			this.$nextTick(() => {
+				this.measureCanvas()
+			})
+		},
+		methods: {
+			// ── 缩放 ──
+			zoomIn() {
+				this.scale = this.clampScale(this.scale + 0.2)
+			},
+			zoomOut() {
+				this.scale = this.clampScale(this.scale - 0.2)
+			},
+			clampScale(s: number): number {
+				if (s < 0.5) s = 0.5
+				if (s > 2.0) s = 2.0
+				// 0.2 步进取整，避免浮点漂移
+				return Math.round(s * 10) / 10
+			},
+			// ── 全屏 ──
+			openFullscreen() {
+				this.prevScale = this.scale
+				this.scale = 1.0
+				this.fullscreen = true
+				setTimeout(() => {
+					this.measureCanvas()
+				}, 180)
+			},
+			closeFullscreen() {
+				this.fullscreen = false
+				this.scale = this.prevScale
+				setTimeout(() => {
+					this.measureCanvas()
+				}, 180)
+			},
+			// ── 内容尺寸测量（rpx，未缩放基准；量不到时 sizer 用兜底尺寸） ──
+			// boundingClientRect 返回的是 transform 后的 px，需同时除以 scale 与 rpxScale
+			// 只量高度（canvas）+ 卡片宽（工具条行）；宽度纯算术，不量 canvas（stretch 正反馈）
+			measureCanvas() {
+				const self = this
+				const s = this.scale
+				uni.createSelectorQuery().select('.mfn-canvas').boundingClientRect((rect) => {
+					const node = rect as NodeInfo
+					const hPx = node.height ?? 0
+					const baseH = s > 0 ? hPx / s / self.rpxScale : 0
+					if (baseH > 0) {
+						self.contentH = baseH
+					}
+				}).exec()
+				uni.createSelectorQuery().select('.mfn-toolbar-row').boundingClientRect((rect) => {
+					const node = rect as NodeInfo
+					const tPx = node.width ?? 0
+					if (tPx > 0) {
+						self.cardW = tPx / self.rpxScale
+					}
+				}).exec()
+			},
+			// 分支区最宽（rpx，递归）：普通节点 300；分支容器 = max(列数×320, 各分支子树最宽)
+			maxBranchWidth(n: FlowNode): number {
+				const kind = n.kind()
+				if (kind == 'condition' || kind == 'fork') {
+					const bs = n.branches
+					let m = bs.length * 320
+					for (let i = 0; i < bs.length; i++) {
+						const b = bs[i]
+						const c = b.children
+						if (c != null) {
+							const cw = this.maxBranchWidth(c!)
+							if (cw > m) m = cw
+						}
+					}
+					return m
+				}
+				const c = n.children
+				if (c != null) {
+					const cw = this.maxBranchWidth(c!)
+					if (cw > 300) return cw
+				}
+				const jc = n.joinChildren
+				if (jc != null) {
+					const jw = this.maxBranchWidth(jc!)
+					if (jw > 300) return jw
+				}
+				return 300
+			},
+			// ── 双指捏合（仅全屏） ──
+			touchDist(e: TouchEvent): number {
+				const ts = e.touches
+				if (ts.length < 2) return 0
+				const x1 = ts[0].clientX
+				const y1 = ts[0].clientY
+				const x2 = ts[1].clientX
+				const y2 = ts[1].clientY
+				const dx = x1 - x2
+				const dy = y1 - y2
+				return Math.sqrt(dx * dx + dy * dy)
+			},
+			onTouchStart(e: TouchEvent) {
+				if (e.touches.length >= 2) {
+					this.pinchDist = this.touchDist(e)
+					this.pinchStartScale = this.scale
+				}
+			},
+			onTouchMove(e: TouchEvent) {
+				if (e.touches.length >= 2 && this.pinchDist > 0) {
+					const d = this.touchDist(e)
+					if (d > 0) {
+						this.scale = this.clampScale(this.pinchStartScale * d / this.pinchDist)
+					}
+				}
+			},
+			onTouchEnd(e: TouchEvent) {
+				if (e.touches.length < 2) {
+					this.pinchDist = 0
+				}
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.mfn-wrap{
+	flex-direction: column;
+}
+// 工具条行：右对齐（文档流首行，天然右上角，不压内容）
+.mfn-toolbar-row{
+	flex-direction: row;
+	justify-content: flex-end;
+	padding: 8rpx 8rpx 0;
+}
+// 内嵌滚动视口（高度由 embedScrollH 撑，封顶 1200rpx）
+.mfn-embed-scroll{
+	background-color: #FFFFFF;
+}
+// sizer：纯占位（给 scroll-view 撑出缩放后可滚动区域）
+.mfn-sizer{
+}
+// 宽度由 canvasStyle 显式声明（内嵌=卡片宽/全屏=max(750,内容宽)），不用 min-width（会顶回 750 导致内嵌偏右）
+.mfn-canvas{
+	flex-direction: column;
+	align-items: center;
+	padding: 20rpx 40rpx 40rpx;
+}
+.mfn-empty{
+	padding: 60rpx 0;
+	align-items: center;
+	.mfn-empty-text{
+		font-size: 24rpx;
+		color: #BBBBBB;
+	}
+}
+// 工具条（内嵌=文档流行内右对齐；全屏=头部右侧）
+.mfn-tools{
+	flex-direction: row;
+	align-items: center;
+	background-color: #FFFFFF;
+	border-radius: 32rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.12);
+	padding: 6rpx 10rpx;
+	// 必须带背景色：uvue(Android) 透明 view 点击穿透，事件到不了 @tap
+	.mfn-tool-btn{
+		width: 56rpx;
+		height: 56rpx;
+		justify-content: center;
+		align-items: center;
+		border-radius: 28rpx;
+		background-color: #FFFFFF;
+	}
+	.mfn-tool-text{
+		font-size: 32rpx;
+		color: #666666;
+		line-height: 1;
+	}
+	.mfn-tool-text--ico{
+		font-size: 28rpx;
+	}
+	.mfn-tool-percent{
+		font-size: 24rpx;
+		color: #333333;
+		margin: 0 6rpx;
+	}
+}
+// 全屏头部：回到文档流（uvue 无 position: static，用 relative + 零偏移）
+.mfn-tools--full{
+	position: relative;
+	top: 0;
+	right: 0;
+}
+// 全屏遮罩
+.mfn-full{
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #F0F2F5;
+	z-index: 999;
+	flex-direction: column;
+	.mfn-full-statusbar{
+		flex-shrink: 0;
+		background-color: #FFFFFF;
+	}
+	.mfn-full-head{
+		flex-shrink: 0;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 20rpx 24rpx;
+		background-color: #FFFFFF;
+		border-bottom-width: 2rpx;
+		border-bottom-style: solid;
+		border-bottom-color: #E8E8E8;
+		.mfn-full-title{
+			.mfn-full-title-text{
+				font-size: 32rpx;
+				font-weight: bold;
+				color: #333333;
+			}
+		}
+	}
+	// 必须带背景色：透明 view 收不到 touch 事件（双指捏合依赖）
+	.mfn-full-body{
+		flex: 1;
+		overflow: hidden;
+		justify-content: center;
+		align-items: center;
+		background-color: #F0F2F5;
+		.mfn-full-scroll{
+			background-color: #F0F2F5;
+		}
+	}
+}
+</style>

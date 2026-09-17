@@ -1,0 +1,443 @@
+/**
+ * jeeflow 流程定义（snaker 图：nodes+edges）→ 钉钉风格竖向树（原生渲染专用）
+ *
+ * 移植自 flow-designer-dingtalk（mldong-flow-designer-plus feature/dingtalk）
+ * packages/flow-designer/src/dingtalk/utils/converter.ts 的 graphToTree 半边。
+ * 原实现是 TS + Map/Set；这里按 uts 规范改写：
+ *   - 输入用 UTSJSONObject 动态读取（页面侧 graph = detail 响应 jsonObject，原样透传）
+ *   - 集合用 string[]（流程节点量级小，includes 足够，规避 Set 平台差异）
+ *   - 只读回显不需要 treeToGraph（导出方向不移植）
+ *
+ * 输出树语义（与钉钉渲染器一致，坐标类字段一律忽略）：
+ *   - 普通节点：children 指向链上下一个节点
+ *   - condition：decision 多分支容器，branches 各带 edge 名/expr，children = 全分支公共汇聚点起的链
+ *   - fork：并行容器，branches 各独立链，joinChildren = join 节点起（join 本身为链首）
+ */
+
+/** 树节点（统一类，按 type 区分三种形态） */
+export class FlowNode {
+	id: string = ''
+	/** 原始 node.type（如 snaker:task）；容器节点为 'condition' / 'fork' */
+	type: string = ''
+	/** 显示文本（node.text.value） */
+	name: string = ''
+	/** 原始 node.properties（assignee/performType/countersignType 等） */
+	properties: UTSJSONObject = {} as UTSJSONObject
+	/** 普通节点 / condition：链上下一个节点 */
+	children: FlowNode | null = null
+	/** condition / fork：分支列表（顺序 = 出边顺序） */
+	branches: FlowBranch[] = []
+	/** fork：join 节点 id */
+	joinId: string | null = null
+	/** fork：join 节点起的链（链首即 join 节点本身） */
+	joinChildren: FlowNode | null = null
+
+	/** 容器类型（渲染分派用） */
+	kind(): string {
+		if (this.type == 'condition') return 'condition'
+		if (this.type == 'fork') return 'fork'
+		return 'node'
+	}
+	/** 基础类型（去 snaker: 前缀） */
+	baseType(): string {
+		const k = this.kind()
+		if (k == 'condition') return 'condition'
+		if (k == 'fork') return 'fork'
+		return this.type.replace('snaker:', '')
+	}
+}
+
+/** 分支（对应一条出边；children 为分支内节点链） */
+export class FlowBranch {
+	/** edge id */
+	id: string = ''
+	/** 分支名（edge.text.value，条件文案） */
+	name: string = ''
+	/** edge properties（含 expr） */
+	properties: UTSJSONObject = {} as UTSJSONObject
+	children: FlowNode | null = null
+}
+
+const FLOW_TYPE_PREFIX = 'snaker:'
+
+/** 图节点（从 jsonObject.nodes 读出的最小视图） */
+class FlowGraphNode {
+	id: string = ''
+	type: string = ''
+	name: string = ''
+	properties: UTSJSONObject = {} as UTSJSONObject
+}
+
+/** 图边（从 jsonObject.edges 读出的最小视图） */
+class FlowGraphEdge {
+	id: string = ''
+	sourceNodeId: string = ''
+	targetNodeId: string = ''
+	name: string = ''
+	properties: UTSJSONObject = {} as UTSJSONObject
+}
+
+/** 读 node.text.value（可能缺 text 节点） */
+function nodeTextValue(n: UTSJSONObject): string {
+	const t = n.getJSON('text')
+	if (t != null) {
+		return t!.getString('value') ?? ''
+	}
+	return ''
+}
+
+/** 读 properties（缺失兜底空对象，后续读取全部走 ?? 不炸） */
+function nodeProperties(o: UTSJSONObject): UTSJSONObject {
+	const p = o.getJSON('properties')
+	if (p != null) {
+		return p!
+	}
+	return {} as UTSJSONObject
+}
+
+function parseGraphNode(o: UTSJSONObject): FlowGraphNode {
+	const n = new FlowGraphNode()
+	n.id = o.getString('id') ?? ''
+	n.type = o.getString('type') ?? ''
+	n.name = nodeTextValue(o)
+	n.properties = nodeProperties(o)
+	return n
+}
+
+function parseGraphEdge(o: UTSJSONObject): FlowGraphEdge {
+	const e = new FlowGraphEdge()
+	e.id = o.getString('id') ?? ''
+	e.sourceNodeId = o.getString('sourceNodeId') ?? ''
+	e.targetNodeId = o.getString('targetNodeId') ?? ''
+	e.name = nodeTextValue(o)
+	e.properties = nodeProperties(o)
+	return e
+}
+
+/** 出边表项：sourceNodeId → 出边数组（按出现顺序） */
+class FlowOutEntry {
+	source: string = ''
+	edges: FlowGraphEdge[] = []
+}
+
+function buildOutEdges(edges: FlowGraphEdge[]): FlowOutEntry[] {
+	const out: FlowOutEntry[] = []
+	for (let i = 0; i < edges.length; i++) {
+		const e = edges[i]
+		const entry = out.find(x => x.source == e.sourceNodeId)
+		if (entry != null) {
+			entry!.edges.push(e)
+		} else {
+			const item = new FlowOutEntry()
+			item.source = e.sourceNodeId
+			item.edges = [e]
+			out.push(item)
+		}
+	}
+	return out
+}
+
+function outEdgesOf(outMap: FlowOutEntry[], nodeId: string): FlowGraphEdge[] {
+	const entry = outMap.find(x => x.source == nodeId)
+	if (entry != null) {
+		return entry!.edges
+	}
+	return []
+}
+
+/**
+ * 主入口：graph（jsonObject）→ 钉钉树根节点；无 start / 无节点返回 null
+ */
+export function graphToTree(graph: UTSJSONObject | null): FlowNode | null {
+	if (graph == null) return null
+	const nodesRaw = graph.getArray('nodes')
+	if (nodesRaw == null || nodesRaw.length == 0) return null
+	const nodes: FlowGraphNode[] = []
+	for (let i = 0; i < nodesRaw.length; i++) {
+		const n = nodesRaw[i] as UTSJSONObject
+		if (n != null) {
+			nodes.push(parseGraphNode(n!))
+		}
+	}
+	const edgesRaw = graph.getArray('edges')
+	const edges: FlowGraphEdge[] = []
+	if (edgesRaw != null) {
+		for (let i = 0; i < edgesRaw.length; i++) {
+			const e = edgesRaw[i] as UTSJSONObject
+			if (e != null) {
+				edges.push(parseGraphEdge(e!))
+			}
+		}
+	}
+	const nodeMap = nodes
+	const outMap = buildOutEdges(edges)
+	// 找 start
+	for (let i = 0; i < nodeMap.length; i++) {
+		if (nodeMap[i].type == FLOW_TYPE_PREFIX + 'start') {
+			return buildChain(nodeMap[i].id, [] as string[], [] as string[], nodeMap, outMap, edges)
+		}
+	}
+	return null
+}
+
+/** 复制字符串数组（uts 无 spread 语义保证，显式循环） */
+function copyIds(src: string[]): string[] {
+	const dst: string[] = []
+	for (let i = 0; i < src.length; i++) {
+		dst.push(src[i])
+	}
+	return dst
+}
+
+/**
+ * 递归构建节点链
+ * @param nodeId 当前节点
+ * @param stopIds 汇聚点集合（命中即截断，不并入当前链）
+ * @param visited 已访问节点（共享：分支 BFS 抢占式截断 + 环路防护）
+ */
+function buildChain(
+	nodeId: string,
+	stopIds: string[],
+	visited: string[],
+	nodeMap: FlowGraphNode[],
+	outMap: FlowOutEntry[],
+	allEdges: FlowGraphEdge[]
+): FlowNode | null {
+	if (stopIds.includes(nodeId)) return null
+	const idx = nodeMap.findIndex(n => n.id == nodeId)
+	if (idx < 0) return null
+	const g = nodeMap[idx]
+
+	// 环路 / 已被其他分支抢占：返回叶子，不再展开
+	if (visited.includes(nodeId)) {
+		const leaf = new FlowNode()
+		leaf.id = g.id
+		leaf.type = g.type
+		leaf.name = g.name
+		leaf.properties = g.properties
+		return leaf
+	}
+	visited.push(nodeId)
+
+	const outs = outEdgesOf(outMap, nodeId)
+	const base = g.type.replace(FLOW_TYPE_PREFIX, '')
+
+	if (base == 'decision' && outs.length > 1) {
+		return buildConditionNode(g, outs, stopIds, nodeMap, outMap, allEdges, visited)
+	}
+	if (base == 'fork' && outs.length > 1) {
+		return buildForkNode(g, outs, stopIds, nodeMap, outMap, allEdges, visited)
+	}
+
+	const node = new FlowNode()
+	node.id = g.id
+	node.type = g.type
+	node.name = g.name
+	node.properties = g.properties
+
+	if (base == 'end') return node
+
+	if (outs.length == 1) {
+		node.children = buildChain(outs[0].targetNodeId, stopIds, visited, nodeMap, outMap, allEdges)
+	}
+	return node
+}
+
+/** 条件分支容器（decision）：公共汇聚点 = 第一个被全部分支可达的节点 */
+function buildConditionNode(
+	g: FlowGraphNode,
+	outs: FlowGraphEdge[],
+	stopIds: string[],
+	nodeMap: FlowGraphNode[],
+	outMap: FlowOutEntry[],
+	allEdges: FlowGraphEdge[],
+	visited: string[]
+): FlowNode {
+	const branchTargets: string[] = []
+	for (let i = 0; i < outs.length; i++) {
+		branchTargets.push(outs[i].targetNodeId)
+	}
+	const convergence = findCommonConvergence(branchTargets, allEdges, g.id, nodeMap)
+
+	const branchStop = copyIds(stopIds)
+	if (convergence != null) {
+		branchStop.push(convergence!)
+	}
+
+	const branches: FlowBranch[] = []
+	for (let i = 0; i < outs.length; i++) {
+		const e = outs[i]
+		const b = new FlowBranch()
+		b.id = e.id
+		b.name = e.name
+		b.properties = e.properties
+		b.children = buildChain(e.targetNodeId, branchStop, visited, nodeMap, outMap, allEdges)
+		branches.push(b)
+	}
+
+	const node = new FlowNode()
+	node.id = g.id
+	node.type = 'condition'
+	node.name = g.name
+	node.properties = g.properties
+	node.branches = branches
+
+	if (convergence != null) {
+		node.children = buildChain(convergence!, stopIds, visited, nodeMap, outMap, allEdges)
+	}
+	return node
+}
+
+/** 并行容器（fork）：join 节点 = BFS 找到的第一个 snaker:join */
+function buildForkNode(
+	g: FlowGraphNode,
+	outs: FlowGraphEdge[],
+	stopIds: string[],
+	nodeMap: FlowGraphNode[],
+	outMap: FlowOutEntry[],
+	allEdges: FlowGraphEdge[],
+	visited: string[]
+): FlowNode {
+	const branchTargets: string[] = []
+	for (let i = 0; i < outs.length; i++) {
+		branchTargets.push(outs[i].targetNodeId)
+	}
+	const joinId = findJoinNode(branchTargets, allEdges, nodeMap)
+
+	const branchStop = copyIds(stopIds)
+	if (joinId != null) {
+		branchStop.push(joinId!)
+	}
+
+	const branches: FlowBranch[] = []
+	for (let i = 0; i < outs.length; i++) {
+		const e = outs[i]
+		const b = new FlowBranch()
+		b.id = e.id
+		b.name = e.name
+		b.properties = e.properties
+		b.children = buildChain(e.targetNodeId, branchStop, visited, nodeMap, outMap, allEdges)
+		branches.push(b)
+	}
+
+	const node = new FlowNode()
+	node.id = g.id
+	node.type = 'fork'
+	node.name = g.name
+	node.properties = g.properties
+	node.branches = branches
+	node.joinId = joinId
+
+	if (joinId != null) {
+		node.joinChildren = buildChain(joinId!, stopIds, visited, nodeMap, outMap, allEdges)
+	}
+	return node
+}
+
+/** BFS 找 join 节点（fork 专用） */
+function findJoinNode(
+	startIds: string[],
+	allEdges: FlowGraphEdge[],
+	nodeMap: FlowGraphNode[]
+): string | null {
+	const outMap = buildOutEdges(allEdges)
+	const visited: string[] = []
+	const queue: string[] = []
+	for (let i = 0; i < startIds.length; i++) {
+		queue.push(startIds[i])
+	}
+	let qi = 0
+	while (qi < queue.length) {
+		const current = queue[qi]
+		qi++
+		if (visited.includes(current)) continue
+		visited.push(current)
+		const ni = nodeMap.findIndex(n => n.id == current)
+		if (ni >= 0 && nodeMap[ni].type == FLOW_TYPE_PREFIX + 'join') {
+			return current
+		}
+		const outs = outEdgesOf(outMap, current)
+		for (let i = 0; i < outs.length; i++) {
+			if (!visited.includes(outs[i].targetNodeId)) {
+				queue.push(outs[i].targetNodeId)
+			}
+		}
+	}
+	return null
+}
+
+/**
+ * 公共汇聚点：逐分支 BFS 统计可达计数，再 BFS 取第一个被全部分支可达的节点。
+ * 找不到时 fallback 第一个 end（决策直达终点场景）。
+ */
+function findCommonConvergence(
+	branchTargets: string[],
+	allEdges: FlowGraphEdge[],
+	excludeId: string,
+	nodeMap: FlowGraphNode[]
+): string | null {
+	const outMap = buildOutEdges(allEdges)
+	const total = branchTargets.length
+
+	// 可达计数（数组对：id / count）
+	const reachIds: string[] = []
+	const reachCounts: number[] = []
+	for (let t = 0; t < total; t++) {
+		const visited: string[] = []
+		const queue: string[] = []
+		queue.push(branchTargets[t])
+		let qi = 0
+		while (qi < queue.length) {
+			const current = queue[qi]
+			qi++
+			if (visited.includes(current)) continue
+			visited.push(current)
+			const ri = reachIds.indexOf(current)
+			if (ri >= 0) {
+				reachCounts[ri] = reachCounts[ri] + 1
+			} else {
+				reachIds.push(current)
+				reachCounts.push(1)
+			}
+			const outs = outEdgesOf(outMap, current)
+			for (let i = 0; i < outs.length; i++) {
+				if (!visited.includes(outs[i].targetNodeId)) {
+					queue.push(outs[i].targetNodeId)
+				}
+			}
+		}
+	}
+
+	// BFS 找第一个全可达节点
+	const visited: string[] = []
+	visited.push(excludeId)
+	const queue: string[] = []
+	for (let i = 0; i < branchTargets.length; i++) {
+		queue.push(branchTargets[i])
+	}
+	let qi = 0
+	while (qi < queue.length) {
+		const current = queue[qi]
+		qi++
+		if (visited.includes(current)) continue
+		visited.push(current)
+		const ri = reachIds.indexOf(current)
+		if (ri >= 0 && reachCounts[ri] == total) {
+			return current
+		}
+		const outs = outEdgesOf(outMap, current)
+		for (let i = 0; i < outs.length; i++) {
+			if (!visited.includes(outs[i].targetNodeId)) {
+				queue.push(outs[i].targetNodeId)
+			}
+		}
+	}
+
+	// fallback：第一个 end
+	for (let i = 0; i < nodeMap.length; i++) {
+		if (nodeMap[i].type == FLOW_TYPE_PREFIX + 'end') {
+			return nodeMap[i].id
+		}
+	}
+	return null
+}

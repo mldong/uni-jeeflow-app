@@ -43,14 +43,14 @@
 					<text class="m-info-value">{{row.getString('value') ?? ''}}</text>
 				</view>
 			</view>
-			<!-- 流程图（对齐 vben 任务详情 Tab） -->
-			<view class="m-card" v-if="graph != null">
-				<view class="m-card-title-row">
-					<text class="m-card-title-text">流程图</text>
-					<text class="m-chart-legend">已走高亮 · 当前节点高亮</text>
+				<!-- 流程图（原生渲染 m-flow-native；旧 webview 方案已删，如需回退见 git 历史 components/m-flow-webview） -->
+				<view class="m-card" v-if="graph != null">
+					<view class="m-card-title-row">
+						<text class="m-card-title-text">流程图</text>
+						<text class="m-chart-legend">已走高亮 · 当前节点高亮</text>
+					</view>
+					<m-flow-native :graph="graph" :highLight="highLight"></m-flow-native>
 				</view>
-				<m-flow-webview :graph="graph" :highLight="highLight"></m-flow-webview>
-			</view>
 			<!-- 审批记录（并行加载：局部占位，不再整页遮罩） -->
 			<view class="m-card">
 				<view class="m-card-title">
@@ -89,7 +89,7 @@
 <script lang="uts">
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
 	import mTimeline from '@/components/m-timeline/m-timeline.uvue'
-	import mFlowWebview from '@/components/m-flow-webview/m-flow-webview.uvue'
+	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
 	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm } from '@/util/form_schemas.uts'
 	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
@@ -99,7 +99,7 @@
 		components: {
 			mSchemaForm,
 			mTimeline,
-			mFlowWebview
+			mFlowNative
 		},
 		data() {
 			return {

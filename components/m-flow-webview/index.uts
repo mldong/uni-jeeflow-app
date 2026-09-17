@@ -1,2 +1,0 @@
-import mFlowWebviewUvue from "./m-flow-webview.uvue";
-export const mFlowWebview = mFlowWebviewUvue;

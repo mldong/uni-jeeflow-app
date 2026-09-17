@@ -1,0 +1,522 @@
+<template>
+	<view class="mft-chain">
+		<!-- 条件分支容器（decision） -->
+		<view class="mft-cond" v-if="kind == 'condition'">
+			<view class="mft-cond-header">
+				<text class="mft-cond-title">条件分支</text>
+			</view>
+			<scroll-view scroll-x class="mft-cond-scroll">
+				<view class="mft-branches" :style="{width: branchesWidth + 'rpx'}">
+					<view class="mft-hline mft-hline--top" :style="{left: hlineLeft + 'rpx', width: hlineWidth + 'rpx'}"></view>
+					<view class="mft-col" v-for="(b, bi) in branches" :key="b.id">
+						<view class="mft-col-name" v-if="(b.name ?? '').length > 0">
+							<text class="mft-col-name-text">{{b.name}}</text>
+						</view>
+						<m-flow-tree :node="b.children" :highLight="highLight" :activeNames="activeNames" :historyNames="historyNames"></m-flow-tree>
+					</view>
+					<view class="mft-hline mft-hline--bottom" :style="{left: hlineLeft + 'rpx', width: hlineWidth + 'rpx'}"></view>
+				</view>
+			</scroll-view>
+			<view class="mft-line"></view>
+			<m-flow-tree v-if="childNode != null" :node="childNode" :highLight="highLight" :activeNames="activeNames" :historyNames="historyNames"></m-flow-tree>
+		</view>
+		<!-- 并行分支容器（fork + join） -->
+		<view class="mft-cond mft-cond--fork" v-else-if="kind == 'fork'">
+			<view class="mft-cond-header">
+				<text class="mft-cond-title">并行分支</text>
+			</view>
+			<scroll-view scroll-x class="mft-cond-scroll">
+				<view class="mft-branches" :style="{width: branchesWidth + 'rpx'}">
+					<view class="mft-hline mft-hline--top" :style="{left: hlineLeft + 'rpx', width: hlineWidth + 'rpx'}"></view>
+					<view class="mft-col" v-for="(b, bi) in branches" :key="b.id">
+						<m-flow-tree :node="b.children" :highLight="highLight" :activeNames="activeNames" :historyNames="historyNames"></m-flow-tree>
+					</view>
+					<view class="mft-hline mft-hline--bottom" :style="{left: hlineLeft + 'rpx', width: hlineWidth + 'rpx'}"></view>
+				</view>
+			</scroll-view>
+			<view class="mft-line"></view>
+			<m-flow-tree v-if="joinChain != null" :node="joinChain" :highLight="highLight" :activeNames="activeNames" :historyNames="historyNames"></m-flow-tree>
+		</view>
+		<!-- 普通节点：start / end / join / task -->
+		<template v-else-if="kind == 'node'">
+			<!-- 开始胶囊 -->
+			<view class="mft-pill mft-pill--start" v-if="base == 'start'">
+				<text class="mft-pill-text">开始</text>
+			</view>
+			<!-- 结束胶囊 -->
+			<view class="mft-pill mft-pill--end" v-else-if="base == 'end'">
+				<text class="mft-pill-text">结束</text>
+			</view>
+			<!-- 合并节点（join）：虚线框容器 -->
+			<view class="mft-join" v-else-if="base == 'join'">
+				<view class="mft-join-inner">
+					<view class="mft-join-dot"></view>
+					<text class="mft-join-name">{{joinName}}</text>
+				</view>
+			</view>
+			<!-- 任务卡片 -->
+			<view class="mft-card" :class="cardStateClass" v-else>
+				<view class="mft-card-bar" :style="{backgroundColor: barColor}"></view>
+				<view class="mft-card-header">
+					<text class="mft-card-icon">{{typeIcon}}</text>
+					<text class="mft-card-title">{{typeLabel}}</text>
+					<text class="mft-card-badge" v-if="countersignBadge.length > 0" :style="{backgroundColor: countersignBadgeBg}">{{countersignBadge}}</text>
+				</view>
+				<view class="mft-card-body">
+					<text class="mft-card-body-text">{{nameText}}</text>
+				</view>
+				<!-- 会签成员进度回显（highLight.nodeProgress） -->
+				<view class="mft-card-members" v-if="members.length > 0">
+					<view class="mft-member" v-for="(m, mi) in members" :key="mi">
+						<view class="mft-member-mark" :style="{backgroundColor: memberMarkBg(m)}">
+							<text class="mft-member-mark-text" :style="{color: memberMarkColor(m)}">{{memberMark(m)}}</text>
+						</view>
+						<text class="mft-member-name" :style="{color: memberNameColor(m)}">{{memberName(m)}}</text>
+					</view>
+				</view>
+			</view>
+			<!-- 节点间连线（end 之后无）：两端 history→绿；前 history 后 active→蓝；否则灰 -->
+			<view class="mft-line" :class="lineClass" v-if="base != 'end'"></view>
+			<m-flow-tree v-if="childNode != null" :node="childNode" :depth="depth + 1" :highLight="highLight" :activeNames="activeNames" :historyNames="historyNames"></m-flow-tree>
+		</template>
+	</view>
+</template>
+
+<script lang="uts">
+	// 钉钉风格竖向流程树 · 递归渲染单元（只读 viewer）
+	// 节点卡片/条件分支/并行分支/高亮/会签成员，对齐 mldong-flow-designer-dingtalk viewer 语义
+	import { FlowNode, FlowBranch } from '@/util/flow_converter.uts'
+
+	export default {
+		// 递归组件：uvue 按 name 自引用（模板内 m-flow-tree 即自身）
+		name: "m-flow-tree",
+		props: {
+			node: {
+				type: Object as PropType<FlowNode | null>,
+				default: null
+			},
+			// processInstance/highLight 完整响应（含 nodeProgress）
+			highLight: {
+				type: Object as PropType<UTSJSONObject | null>,
+				default: null
+			},
+			// 高亮节点 id 列表（activeNodeNames / historyNodeNames，匹配 node.id）
+			activeNames: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			},
+			historyNames: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			},
+			// 节点深度（0=start，1=第一个任务=申请人）
+			depth: {
+				type: Number,
+				default: 0
+			}
+		},
+		computed: {
+			kind(): string {
+				const n = this.node
+				return n == null ? '' : n!.kind()
+			},
+			base(): string {
+				const n = this.node
+				return n == null ? '' : n!.baseType()
+			},
+			branches(): FlowBranch[] {
+				const n = this.node
+				return n == null ? [] as FlowBranch[] : n!.branches
+			},
+			childNode(): FlowNode | null {
+				const n = this.node
+				return n == null ? null : n!.children
+			},
+			joinChain(): FlowNode | null {
+				const n = this.node
+				return n == null ? null : n!.joinChildren
+			},
+			// 分支区宽度（列宽 320rpx × n + 左右留白 20rpx），横向超宽时 scroll-x
+			branchesWidth(): number {
+				return this.branches.length * 320 + 20
+			},
+			// 顶/底横线：首列中心 → 末列中心（纯算术，免 getBoundingClientRect）
+			hlineLeft(): number {
+				return 170
+			},
+			hlineWidth(): number {
+				return (this.branches.length - 1) * 320
+			},
+			nameText(): string {
+				const n = this.node
+				if (n == null) return ''
+				const nm = n!.name
+				return nm.length > 0 ? nm : '未命名节点'
+			},
+			joinName(): string {
+				const n = this.node
+				if (n == null) return '合并点'
+				const nm = n!.name
+				return nm.length > 0 ? nm : '合并点'
+			},
+			isActive(): boolean {
+				const n = this.node
+				if (n == null) return false
+				return this.activeNames.includes(n!.id)
+			},
+			isHistory(): boolean {
+				const n = this.node
+				if (n == null) return false
+				return this.historyNames.includes(n!.id)
+			},
+			cardStateClass(): string {
+				if (this.isActive) return 'mft-card--active'
+				if (this.isHistory) return 'mft-card--history'
+				return ''
+			},
+			// 连线状态（对齐 AddButton：按端点节点状态组合）
+			// 前 history + 后 active → 蓝（指向正在审批节点）；两端 history → 绿（已审批）
+			lineClass(): string {
+				const n = this.node
+				if (n == null) return ''
+				const next = n!.children
+				const nextId = next == null ? '' : next!.id
+				if (nextId.length == 0) return ''
+				if (this.historyNames.includes(n!.id) && this.activeNames.includes(nextId)) {
+					return 'mft-line--active'
+				}
+				if (this.historyNames.includes(n!.id) && this.historyNames.includes(nextId)) {
+					return 'mft-line--history'
+				}
+				return ''
+			},
+			typeLabel(): string {
+				switch (this.base) {
+					case 'task': return this.depth == 1 ? '申请人' : '审批人'
+					case 'custom': return '自定义节点'
+					case 'subProcess': return '子流程'
+					default: return '任务'
+				}
+			},
+			typeIcon(): string {
+				switch (this.base) {
+					case 'task': return '✓'
+					case 'custom': return '★'
+					case 'subProcess': return '▣'
+					default: return '●'
+				}
+			},
+			// 会签识别：performType=ALL；countersignType 兼容平铺 / field 嵌套两种存储
+			countersignType(): string {
+				const n = this.node
+				if (n == null) return ''
+				const p = n!.properties
+				if (p.getString('performType') != 'ALL') return ''
+				const raw = p.getString('countersignType') ?? ''
+				if (raw.length > 0) {
+					return raw == 'SEQUENTIAL' ? 'SEQUENTIAL' : 'PARALLEL'
+				}
+				const field = p.getJSON('field')
+				if (field != null) {
+					const fr = field!.getString('countersignType') ?? ''
+					if (fr.length > 0) {
+						return fr == 'SEQUENTIAL' ? 'SEQUENTIAL' : 'PARALLEL'
+					}
+				}
+				return 'PARALLEL'
+			},
+			countersignBadge(): string {
+				const t = this.countersignType
+				if (t == 'SEQUENTIAL') return '顺序会签'
+				if (t == 'PARALLEL') return '并行会签'
+				return ''
+			},
+			countersignBadgeBg(): string {
+				return this.countersignType == 'SEQUENTIAL' ? '#FA8C16' : '#1677FF'
+			},
+			// 左侧彩条：active 橙 > history 绿 > 会签（并行蓝/顺序橙）> 主题蓝
+			barColor(): string {
+				if (this.isActive) return '#FF8C00'
+				if (this.isHistory) return '#52C41A'
+				const t = this.countersignType
+				if (t == 'SEQUENTIAL') return '#FA8C16'
+				if (t == 'PARALLEL') return '#1677FF'
+				return '#1890FF'
+			},
+			// 会签成员进度（highLight.nodeProgress[node.id].members）
+			members(): UTSJSONObject[] {
+				const n = this.node
+				if (n == null || this.highLight == null) return [] as UTSJSONObject[]
+				const np = this.highLight!.getJSON('nodeProgress')
+				if (np == null) return [] as UTSJSONObject[]
+				const p = np!.getJSON(n!.id)
+				if (p == null) return [] as UTSJSONObject[]
+				const ms = p!.getArray('members')
+				if (ms == null) return [] as UTSJSONObject[]
+				const out: UTSJSONObject[] = []
+				for (let i = 0; i < ms!.length; i++) {
+					const m = ms![i] as UTSJSONObject
+					if (m != null) out.push(m!)
+				}
+				return out
+			}
+		},
+		methods: {
+			memberName(m: UTSJSONObject): string {
+				const nm = m.getString('name') ?? ''
+				if (nm.length > 0) return nm
+				return m.getString('id') ?? ''
+			},
+			memberDone(m: UTSJSONObject): boolean {
+				return m.getBoolean('done') == true
+			},
+			memberActive(m: UTSJSONObject): boolean {
+				return m.getBoolean('active') == true
+			},
+			memberMark(m: UTSJSONObject): string {
+				if (this.memberDone(m)) return '✓'
+				if (this.memberActive(m)) return '▶'
+				return '·'
+			},
+			memberMarkBg(m: UTSJSONObject): string {
+				if (this.memberDone(m)) return '#52C41A'
+				if (this.memberActive(m)) return '#FA8C16'
+				return '#F0F0F0'
+			},
+			memberMarkColor(m: UTSJSONObject): string {
+				if (this.memberDone(m) || this.memberActive(m)) return '#FFFFFF'
+				return '#A8ABB2'
+			},
+			memberNameColor(m: UTSJSONObject): string {
+				if (this.memberDone(m) || this.memberActive(m)) return '#333333'
+				return '#999999'
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+.mft-chain{
+	flex-direction: column;
+	align-items: center;
+}
+// 节点间竖线（原生不支持 background repeat 虚线，降级实线）
+.mft-line{
+	width: 4rpx;
+	height: 44rpx;
+	background-color: #B8BDC4;
+}
+.mft-line--active{
+	background-color: #3068EC;
+}
+.mft-line--history{
+	background-color: #67C23A;
+}
+// 开始/结束胶囊
+.mft-pill{
+	width: 200rpx;
+	height: 64rpx;
+	border-radius: 32rpx;
+	justify-content: center;
+	align-items: center;
+	.mft-pill-text{
+		font-size: 28rpx;
+		font-weight: 500;
+		color: #FFFFFF;
+	}
+}
+.mft-pill--start{
+	background-color: #67C23A;
+}
+.mft-pill--end{
+	background-color: #909399;
+}
+// 合并节点（join）虚线框
+.mft-join{
+	flex-direction: column;
+	align-items: center;
+	margin: 8rpx 0;
+	padding: 20rpx 24rpx;
+	border-width: 2rpx;
+	border-style: dashed;
+	border-color: #F59E0B;
+	border-radius: 12rpx;
+	background-color: #FFFBEB;
+	.mft-join-inner{
+		flex-direction: row;
+		align-items: center;
+		padding: 8rpx 24rpx;
+		border-radius: 28rpx;
+		background-color: #FEF3C7;
+		.mft-join-dot{
+			width: 12rpx;
+			height: 12rpx;
+			border-radius: 6rpx;
+			background-color: #F59E0B;
+			margin-right: 12rpx;
+		}
+		.mft-join-name{
+			font-size: 24rpx;
+			font-weight: 500;
+			color: #D97706;
+		}
+	}
+}
+// 任务卡片
+.mft-card{
+	position: relative;
+	width: 300rpx;
+	border-radius: 12rpx;
+	background-color: #FFFFFF;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+	overflow: hidden;
+	.mft-card-bar{
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 6rpx;
+	}
+	.mft-card-header{
+		flex-direction: row;
+		align-items: center;
+		padding: 14rpx 16rpx 4rpx 20rpx;
+		.mft-card-icon{
+			font-size: 24rpx;
+			font-weight: 600;
+			color: #1890FF;
+			margin-right: 8rpx;
+		}
+		.mft-card-title{
+			flex: 1;
+			font-size: 22rpx;
+			color: #999999;
+			lines: 1;
+			text-overflow: ellipsis;
+		}
+		.mft-card-badge{
+			font-size: 18rpx;
+			color: #FFFFFF;
+			padding: 2rpx 12rpx;
+			border-radius: 14rpx;
+			margin-left: 8rpx;
+		}
+	}
+	.mft-card-body{
+		padding: 4rpx 16rpx 16rpx 20rpx;
+		.mft-card-body-text{
+			font-size: 26rpx;
+			font-weight: 600;
+			color: #333333;
+			lines: 1;
+			text-overflow: ellipsis;
+		}
+	}
+	.mft-card-members{
+		flex-direction: column;
+		padding: 0 16rpx 14rpx 20rpx;
+		.mft-member{
+			flex-direction: row;
+			align-items: center;
+			margin-top: 6rpx;
+			.mft-member-mark{
+				width: 28rpx;
+				height: 28rpx;
+				border-radius: 14rpx;
+				justify-content: center;
+				align-items: center;
+				margin-right: 10rpx;
+				.mft-member-mark-text{
+					font-size: 18rpx;
+					line-height: 1;
+				}
+			}
+			.mft-member-name{
+				flex: 1;
+				font-size: 22rpx;
+				lines: 1;
+				text-overflow: ellipsis;
+			}
+		}
+	}
+}
+// 高亮描边（active 橙 / history 绿）
+.mft-card--active{
+	box-shadow: 0 0 0 4rpx #FF8C00, 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+}
+.mft-card--history{
+	box-shadow: 0 0 0 4rpx #52C41A, 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+}
+// 条件/并行分支组
+.mft-cond{
+	flex-direction: column;
+	align-items: center;
+	margin: 8rpx 0;
+	border-width: 2rpx;
+	border-style: dashed;
+	border-color: #DFE1E6;
+	border-radius: 12rpx;
+	background-color: #F7F8FA;
+	.mft-cond-header{
+		align-self: center;
+		margin-top: 16rpx;
+		margin-bottom: 16rpx;
+		.mft-cond-title{
+			font-size: 22rpx;
+			font-weight: 500;
+			color: #999999;
+			background-color: #F7F8FA;
+			border-width: 2rpx;
+			border-style: solid;
+			border-color: #E8E8E8;
+			border-radius: 16rpx;
+			padding: 4rpx 20rpx;
+		}
+	}
+}
+.mft-cond-scroll{
+	width: 100%;
+}
+.mft-branches{
+	position: relative;
+	flex-direction: row;
+	align-items: flex-start;
+	padding: 0 10rpx;
+}
+// 顶/底横线（absolute 定位，宽度由列数算术得出）
+.mft-hline{
+	position: absolute;
+	height: 4rpx;
+	background-color: #B8BDC4;
+}
+.mft-hline--top{
+	top: 0;
+}
+.mft-hline--bottom{
+	bottom: 0;
+}
+// 分支列
+.mft-col{
+	width: 320rpx;
+	flex-direction: column;
+	align-items: center;
+	flex-shrink: 0;
+	.mft-col-name{
+		margin-top: 2rpx;
+		margin-bottom: 12rpx;
+		max-width: 300rpx;
+		.mft-col-name-text{
+			font-size: 22rpx;
+			color: #666666;
+			background-color: #FFFFFF;
+			border-width: 2rpx;
+			border-style: solid;
+			border-color: #E8E8E8;
+			border-radius: 10rpx;
+			padding: 4rpx 14rpx;
+			lines: 1;
+			text-overflow: ellipsis;
+		}
+	}
+}
+</style>
