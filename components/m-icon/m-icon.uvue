@@ -8,7 +8,32 @@
 <script setup lang="uts">
 	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	// 组件处理逻辑：优先使用自定义图标，如果找不到，就使用uni-icons默认图标
-	import { getIconMap } from './index.uts'
+	// 蒸汽模式：getIconMap 内联进组件（原在 ./index.uts，与组件互相 import 成环，
+	// 蒸汽 js 打包下产生 TDZ ReferenceError: __easycom_0$3 before initialization）
+
+	function unicodeToChar(unicode : String) : String {
+		// 将十六进制字符串转换为整数
+		const codePoint = parseInt(unicode as string, 16)
+		// 将码点转换为字符
+		return String.fromCharCode(codePoint)
+	}
+
+	function getIconMap() : Map<String, String> {
+		const res : Map<String, String> = new Map<String, String>()
+		const fs = uni.getFileSystemManager()
+		const jsonStr : any = fs.readFileSync('/static/fonts/iconfont.json', 'utf-8')
+		const jsonObj = JSON.parse(jsonStr as String) as UTSJSONObject
+		const glyphs = jsonObj.getArray("glyphs") as Array<UTSJSONObject>
+		for (let i = 0; i < glyphs.length; i++) {
+			const obj = glyphs[i] as UTSJSONObject
+			const fontClass = obj.getString('font_class')
+			const unicode = obj.getString('unicode')
+			if (fontClass != null && unicode != null) {
+				res.set(fontClass, unicodeToChar(unicode))
+			}
+		}
+		return res
+	}
 
 	type Props = {
 		type?: string,

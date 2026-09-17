@@ -1,6 +1,7 @@
 import App from './App.uvue'
 import mNavigationBar from '@/components/m-navigation-bar/index.uvue'
-import { mIcon } from '@/components/m-icon'
+// 蒸汽模式：直连 .uvue（原经 @/components/m-icon 桥接 re-export，与组件互相 import 成环 → 蒸汽 js 打包 TDZ）
+import mIcon from '@/components/m-icon/m-icon.uvue'
 import mEmptyDataUvue from '@/components/m-empty-data/m-empty-data.uvue'
 
 import { createSSRApp } from 'vue'
