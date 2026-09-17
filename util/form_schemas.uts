@@ -20,6 +20,11 @@ export type SchemaField = {
 	placeholder: string;
 	options: UTSJSONObject[]; // select/radio/checkbox 静态选项 {label,value}
 	dictType: string; // 远程字典编码（/sys/dict/getByDictType），非空时优先于 options
+	// ApiSelect/ApiTreeSelect 远程选项接口（如部门树 /sys/dept/tree），非空时优先于 dictType
+	apiOptions: string;
+	// 远程选项的 label/value 键（部门树 name/id；用户下拉 label/value），拍平时用
+	apiLabelField: string;
+	apiValueField: string;
 	readonly: boolean;
 }
 
@@ -51,6 +56,59 @@ export const toCamelCase = (str: string): string => {
 		}
 	}
 	return result
+}
+
+/**
+ * ApiSelect/ApiTreeSelect 远程选项拍平：行数组 / 嵌套树（children）/ 内嵌 options 数组
+ * 统一转成 [{label, value}]（value 字符串化，雪花 id 保精度；labelField/valueField 可配，默认 name/id）。
+ * 数据形态兼容：行数组（/sys/user/select）、部门树（/sys/dept/tree）、{rows:[...]}、{list:[...]}、{options:[...]}。
+ * 父节点自身也入选项（部门树父级如"广西公司"亦是合法目标部门）。
+ * 入参 any 规避 UTS getArray CapturedType 与 UTSArray 形参不匹配（同 schemaFromColumns）。
+ */
+export const flattenApiOptions = (data: any, labelField: string, valueField: string): UTSJSONObject[] => {
+	const out: UTSJSONObject[] = []
+	const labelKey = labelField.length > 0 ? labelField : 'name'
+	const valueKey = valueField.length > 0 ? valueField : 'id'
+	// 顶层节点收集（行数组 / {rows|list|options} 包装）进栈
+	const stack: UTSJSONObject[] = []
+	const top = data as UTSJSONObject[] | null
+	if (top != null) {
+		for (let i = 0; i < top!.length; i++) {
+			stack.push(top![i])
+		}
+	} else {
+		const obj = data as UTSJSONObject | null
+		if (obj != null) {
+			const wrapKeys = ['rows', 'list', 'options'] as string[]
+			for (let i = 0; i < wrapKeys.length; i++) {
+				const arr = obj!.getArray<UTSJSONObject>(wrapKeys[i])
+				if (arr != null) {
+					for (let j = 0; j < arr!.length; j++) {
+						stack.push(arr![j])
+					}
+					break
+				}
+			}
+		}
+	}
+	// 迭代拍平（正向索引出栈，children 追加尾部；不用递归——UTS 自引用箭头函数不支持，error18）
+	let i = 0
+	while (i < stack.length) {
+		const node = stack[i]
+		i++
+		const v = node.get(valueKey)
+		if (v != null) {
+			const l = node.get(labelKey)
+			out.push({ label: l != null ? l.toString() : v.toString(), value: v.toString() } as UTSJSONObject)
+		}
+		const children = node.getArray<UTSJSONObject>('children')
+		if (children != null) {
+			for (let j = 0; j < children!.length; j++) {
+				stack.push(children![j])
+			}
+		}
+	}
+	return out
 }
 
 /**
@@ -133,6 +191,9 @@ export const leaveSchema: FormSchema = {
 			],
 			// pro 站种子字典（mldong-website docs/mysql）；dictType 非空时远程拉取覆盖静态项
 			dictType: 'biz_leave_reason_type',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: false
 		},
 		{
@@ -143,6 +204,9 @@ export const leaveSchema: FormSchema = {
 			placeholder: '请选择',
 			options: [],
 			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: false
 		},
 		{
@@ -156,6 +220,9 @@ export const leaveSchema: FormSchema = {
 				opt('下午', 'PM')
 			],
 			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: false
 		},
 		{
@@ -166,6 +233,9 @@ export const leaveSchema: FormSchema = {
 			placeholder: '请选择',
 			options: [],
 			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: false
 		},
 		{
@@ -179,6 +249,9 @@ export const leaveSchema: FormSchema = {
 				opt('下午', 'PM')
 			],
 			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: false
 		},
 		{
@@ -189,6 +262,9 @@ export const leaveSchema: FormSchema = {
 			placeholder: '按起止日期自动计算',
 			options: [],
 			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: true
 		},
 		{
@@ -199,6 +275,9 @@ export const leaveSchema: FormSchema = {
 			placeholder: '请输入请假原因',
 			options: [],
 			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: false
 		},
 		{
@@ -209,6 +288,9 @@ export const leaveSchema: FormSchema = {
 			placeholder: '可选',
 			options: [],
 			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
 			readonly: false
 		}
 	] as SchemaField[]
@@ -308,6 +390,9 @@ export const schemaFromColumns = (columns: any): SchemaField[] | null => {
 		const component = col.getString('component') ?? 'Input'
 		let type = ''
 		let dictType = ''
+		let apiOptions = ''
+		let apiLabelField = ''
+		let apiValueField = ''
 		let readonly = false
 		// 对齐 vben buildFormFieldSchema / toComponentProps 常用组件
 		if (component == 'Input' || component == 'InputPassword' || component == 'AutoComplete'
@@ -332,7 +417,17 @@ export const schemaFromColumns = (columns: any): SchemaField[] | null => {
 			|| component == 'Cascader' || component == 'Transfer' || component == 'ApiTransfer') {
 			type = 'select'
 			if (ext != null) {
-				dictType = ext!.getString(component + '_code') ?? ext!.getString('code') ?? ''
+				// Api* 组件：远程选项接口（api + labelField/valueField，对齐 vben ApiSelect/ApiTreeSelect）
+				// 兼容带组件前缀（ApiTreeSelect_api）与无前缀（api）两种 ext 写法
+				const e = ext!
+				const api = e.getString(component + '_api') ?? e.getString('api') ?? ''
+				if (api.length > 0) {
+					apiOptions = api
+					apiLabelField = e.getString(component + '_labelField') ?? e.getString('labelField') ?? 'name'
+					apiValueField = e.getString(component + '_valueField') ?? e.getString('valueField') ?? 'id'
+				} else {
+					dictType = e.getString(component + '_code') ?? e.getString('code') ?? ''
+				}
 			}
 		} else if (component == 'RadioGroup' || component == 'Radio' || component == 'ApiRadioGroup') {
 			type = 'radio'
@@ -370,6 +465,9 @@ export const schemaFromColumns = (columns: any): SchemaField[] | null => {
 			placeholder: (type == 'select' || type == 'date' ? '请选择' : '请输入') + label,
 			options: options,
 			dictType: dictType,
+			apiOptions: apiOptions,
+			apiLabelField: apiLabelField,
+			apiValueField: apiValueField,
 			readonly: readonly
 		} as SchemaField)
 	}

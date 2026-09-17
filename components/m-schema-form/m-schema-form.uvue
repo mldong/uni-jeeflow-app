@@ -82,12 +82,13 @@
 </template>
 
 <script lang="uts">
-	import { SchemaField } from '@/util/form_schemas.uts'
+	import { SchemaField, flattenApiOptions } from '@/util/form_schemas.uts'
 	import { uploadFile } from '@/api/file.uts'
 	import { dictGetByDictType } from '@/api/dict.uts'
+	import { http, HttpConfig } from '@/util/http.uts'
 	import mPickerYearMonth from '@/components/m-picker-year-month/index.uvue'
 
-	// 字典选项会话级缓存（key=dictType）
+	// 选项会话级缓存（key=dictType 或 apiOptions 接口）
 	const dictCache = new Map<string, UTSJSONObject[]>()
 
 	export default {
@@ -139,10 +140,15 @@
 			this.loadDicts()
 		},
 		methods: {
-			// dictType 字段：远程拉选项（getByDictType），会话级缓存
+			// 远程选项：dictType（字典）或 apiOptions（ApiSelect/ApiTreeSelect 部门树等），会话级缓存
 			loadDicts() {
 				for (let i = 0; i < this.fields.length; i++) {
 					const field = this.fields[i]
+					const api = field.apiOptions
+					if (api.length > 0) {
+						this.loadApiOptions(field, api)
+						continue
+					}
 					if (field.dictType.length == 0) {
 						continue
 					}
@@ -162,6 +168,24 @@
 						// 字典异常保留静态兜底选项
 					})
 				}
+			},
+			// ApiSelect/ApiTreeSelect：调远程接口（部门树/用户下拉）拍平成 {label,value} 回填，
+			// 只读回显靠 displayText 的 value→label 匹配（雪花 id 字符串精确比对，无精度损失）
+			loadApiOptions(field: SchemaField, api: string) {
+				const cached = dictCache.get(api)
+				if (cached != null) {
+					field.options = cached!
+					return
+				}
+				http.post(api, { data: {} as UTSJSONObject } as HttpConfig).then((res) => {
+					const opts = flattenApiOptions(res, field.apiLabelField, field.apiValueField)
+					if (opts.length > 0) {
+						dictCache.set(api, opts)
+						field.options = opts
+					}
+				}).catch((_e) => {
+					// 远程选项异常保留原始值（回显 ID，不阻塞表单）
+				})
 			},
 			// ── 展示辅助 ────────────────────────────────────────────────
 			displayText(field: SchemaField): string {
