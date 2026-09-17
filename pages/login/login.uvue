@@ -34,107 +34,109 @@
 		</view>
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { login, getCaptchaOpenFlag, captcha } from '@/api/user.uts'
 	import { TOKEY_KEY, IS_LOGIN_KEY } from '@/util/const'
 	import { cleanCache, setRefreshToken } from '@/util/cache_util.uts';
 	import { showApiSwitchSheet } from '@/util/api_switch.uts'
-	export default {
-		data() {
-			return {
-				userName: 'admin',
-				password: '123456',
-				captchaFlag: false,
-				captchaImg: '',
-				captchaUuid: '',
-				captchaCode: ''
+	import { $store } from '@/store/index'
+	import { $strUtil } from '@/util/str_util'
+	import { responseInterceptor } from '@/util/http.uts'
+
+	const userName = ref('admin')
+	const password = ref('123456')
+	const captchaFlag = ref(false)
+	const captchaImg = ref('')
+	const captchaUuid = ref('')
+	const captchaCode = ref('')
+
+	// 开发环境长按 logo 弹接口切换（IS_DEV 在 util 内短路，正式包无此能力）
+	function onLogoLongpress() {
+		showApiSwitchSheet()
+	}
+
+	async function handleLogin() {
+		if ($strUtil.isEmpty(userName.value) || $strUtil.isEmpty(password.value)) {
+			uni.showToast({
+				title: '用户名或密码不能为空'
+			})
+			return;
+		}
+		if (captchaFlag.value && $strUtil.isEmpty(captchaCode.value)) {
+			uni.showToast({
+				title: '请输入验证码'
+			})
+			return;
+		}
+		uni.showLoading({
+			title: "登录中……",
+			mask: true
+		})
+		try {
+			const param = {
+				userName: userName.value,
+				password: password.value
+			} as UTSJSONObject
+			if (captchaFlag.value) {
+				param['code'] = captchaCode.value
+				param['uuid'] = captchaUuid.value
 			}
-		},
-		onLoad() {
-			cleanCache()
-			this.$store.resetAuth()
-			this.initCaptcha()
-		},
-		methods: {
-			initCaptcha() {
-				getCaptchaOpenFlag().then((res) => {
-					const flag = (res as UTSJSONObject).getBoolean('flag')
-					this.captchaFlag = flag == true
-					if (this.captchaFlag) {
-						this.loadCaptcha()
-					}
-				}).catch(() => {
-					// 开关接口异常按关闭处理
-					this.captchaFlag = false
+			const res = await login(param)
+			if (responseInterceptor(res)) {
+				const data = res as UTSJSONObject
+				const token = data.getString("token")
+				uni.setStorageSync(TOKEY_KEY, $strUtil.toStr(token))
+				// UC-0113：refreshToken 与 access 同对保存，access 失效时静默续命用
+				setRefreshToken(data.getString("refreshToken"))
+				uni.setStorageSync(IS_LOGIN_KEY, true)
+				$store.setIsLogin(true)
+				uni.reLaunch({
+					url: '/pages/index/index'
 				})
-			},
-			loadCaptcha() {
-				captcha().then((res) => {
-					const data = res as UTSJSONObject
-					this.captchaUuid = data.getString('uuid') ?? ''
-					const b64 = data.getString('base64') ?? ''
-					this.captchaImg = b64.startsWith('data:') ? b64 : 'data:image/png;base64,' + b64
-				}).catch(() => {
-					uni.showToast({
-						title: '验证码加载失败',
-						icon: 'none'
-					})
-				})
-			},
-			// 开发环境长按 logo 弹接口切换（IS_DEV 在 util 内短路，正式包无此能力）
-			onLogoLongpress() {
-				showApiSwitchSheet()
-			},
-			async handleLogin() {
-				if (this.$strUtil.isEmpty(this.userName) || this.$strUtil.isEmpty(this.password)) {
-					uni.showToast({
-						title: '用户名或密码不能为空'
-					})
-					return;
-				}
-				if (this.captchaFlag && this.$strUtil.isEmpty(this.captchaCode)) {
-					uni.showToast({
-						title: '请输入验证码'
-					})
-					return;
-				}
-				uni.showLoading({
-					title: "登录中……",
-					mask: true
-				})
-				try {
-					const param = {
-						userName: this.userName,
-						password: this.password
-					} as UTSJSONObject
-					if (this.captchaFlag) {
-						param['code'] = this.captchaCode
-						param['uuid'] = this.captchaUuid
-					}
-					const res = await login(param)
-					if (this.$responseInterceptor(res)) {
-						const data = res as UTSJSONObject
-						const token = data.getString("token")
-						uni.setStorageSync(TOKEY_KEY, this.$strUtil.toStr(token))
-						// UC-0113：refreshToken 与 access 同对保存，access 失效时静默续命用
-						setRefreshToken(data.getString("refreshToken"))
-						uni.setStorageSync(IS_LOGIN_KEY, true)
-						this.$store.setIsLogin(true)
-						uni.reLaunch({
-							url: '/pages/index/index'
-						})
-					}
-				} catch (err) {
-					uni.showToast({
-						title: this.$strUtil.anyToStr(err),
-						icon: 'none'
-					})
-				} finally {
-					uni.hideLoading()
-				}
 			}
+		} catch (err) {
+			uni.showToast({
+				title: $strUtil.anyToStr(err),
+				icon: 'none'
+			})
+		} finally {
+			uni.hideLoading()
 		}
 	}
+
+	function loadCaptcha() {
+		captcha().then((res) => {
+			const data = res as UTSJSONObject
+			captchaUuid.value = data.getString('uuid') ?? ''
+			const b64 = data.getString('base64') ?? ''
+			captchaImg.value = b64.startsWith('data:') ? b64 : 'data:image/png;base64,' + b64
+		}).catch(() => {
+			uni.showToast({
+				title: '验证码加载失败',
+				icon: 'none'
+			})
+		})
+	}
+
+	function initCaptcha() {
+		getCaptchaOpenFlag().then((res) => {
+			const flag = (res as UTSJSONObject).getBoolean('flag')
+			captchaFlag.value = flag == true
+			if (captchaFlag.value) {
+				loadCaptcha()
+			}
+		}).catch(() => {
+			// 开关接口异常按关闭处理
+			captchaFlag.value = false
+		})
+	}
+
+	onLoad(() => {
+		cleanCache()
+		$store.resetAuth()
+		initCaptcha()
+	})
 </script>
 
 <style lang="less">

@@ -40,162 +40,166 @@
 		<!-- #endif -->
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { processSurrogatePage, processSurrogateRemove } from '@/api/workflow.uts'
 	import { userSelectRows } from '@/api/user.uts'
 	import { loadFlowNames } from '@/util/names.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		data() {
-			return {
-				list: [] as UTSJSONObject[],
-				userNames: {} as UTSJSONObject,
-				// 流程技术名（biz_leave）→ 显示名（请假申请）
-				flowNames: {} as UTSJSONObject,
-				// 映射表异步到位后驱动模板重算
-				flowNameTick: 0,
-				refresherTriggered: false,
-				loading: false
-			};
-		},
-		onShow() {
-			this.requestData()
-			this.loadUserNames()
-			loadFlowNames().then((map) => {
-				this.flowNames = map
-				this.flowNameTick = this.flowNameTick + 1
-			})
-		},
-		methods: {
-			fmtTime(iso: string): string {
-				if (iso.length == 0) {
-					return '—'
-				}
-				let t = iso.replace('T', ' ')
-				const dot = t.indexOf('.')
-				if (dot > 0) {
-					t = t.substring(0, dot)
-				}
-				// 日期部分即可（代理按天粒度）
-				const sp = t.indexOf(' ')
-				return sp > 0 ? t.substring(0, sp) : t
-			},
-			userName(id: string): string {
-				if (id.length == 0) {
-					return '—'
-				}
-				const name = this.userNames.getString(id)
-				if (name != null && name.length > 0) {
-					return name!
-				}
-				return id
-			},
-			// processName 存的是技术名（biz_leave 等）→ 流程显示名；空串=全部流程
-			flowName(item: UTSJSONObject): string {
-				// 触达 flowNameTick，保证映射表异步到位后重渲染
-				const _tick = this.flowNameTick
-				const pn = item.getString('processName') ?? ''
-				if (pn.length == 0) {
-					return '全部流程'
-				}
-				const disp = this.flowNames.getString(pn)
-				if (disp != null && disp.length > 0) {
-					return disp!
-				}
-				return pn
-			},
-			loadUserNames() {
-				const cached = uni.getStorageSync('app:user:names')
-				if (cached != null) {
-					const cs = cached.toString()
-					if (cs.length > 0) {
-						try {
-							const obj = JSON.parse(cs) as UTSJSONObject
-							if (obj != null) {
-								this.userNames = obj!
-							}
-						} catch (e) { }
+	const list = ref<UTSJSONObject[]>([])
+	const userNames = ref<UTSJSONObject>({} as UTSJSONObject)
+	// 流程技术名（biz_leave）→ 显示名（请假申请）
+	const flowNames = ref<UTSJSONObject>({} as UTSJSONObject)
+	// 映射表异步到位后驱动模板重算
+	const flowNameTick = ref(0)
+	const refresherTriggered = ref(false)
+	const loading = ref(false)
+
+	function fmtTime(iso: string): string {
+		if (iso.length == 0) {
+			return '—'
+		}
+		let t = iso.replace('T', ' ')
+		const dot = t.indexOf('.')
+		if (dot > 0) {
+			t = t.substring(0, dot)
+		}
+		// 日期部分即可（代理按天粒度）
+		const sp = t.indexOf(' ')
+		return sp > 0 ? t.substring(0, sp) : t
+	}
+
+	function userName(id: string): string {
+		if (id.length == 0) {
+			return '—'
+		}
+		const name = userNames.value.getString(id)
+		if (name != null && name.length > 0) {
+			return name!
+		}
+		return id
+	}
+
+	// processName 存的是技术名（biz_leave 等）→ 流程显示名；空串=全部流程
+	function flowName(item: UTSJSONObject): string {
+		// 触达 flowNameTick，保证映射表异步到位后重渲染
+		const _tick = flowNameTick.value
+		const pn = item.getString('processName') ?? ''
+		if (pn.length == 0) {
+			return '全部流程'
+		}
+		const disp = flowNames.value.getString(pn)
+		if (disp != null && disp.length > 0) {
+			return disp!
+		}
+		return pn
+	}
+
+	function loadUserNames() {
+		const cached = uni.getStorageSync('app:user:names')
+		if (cached != null) {
+			const cs = cached.toString()
+			if (cs.length > 0) {
+				try {
+					const obj = JSON.parse(cs) as UTSJSONObject
+					if (obj != null) {
+						userNames.value = obj!
 					}
-				}
-				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
-				userSelectRows().then((rows) => {
-					const map = {} as UTSJSONObject
-					for (let i = 0; i < rows.length; i++) {
-						const row = rows[i]
-						const v = row.getString('value')
-						const l = row.getString('label')
-						if (v != null && l != null) {
-							map[v!] = l!
-						}
-					}
-					this.userNames = map
-					uni.setStorageSync('app:user:names', JSON.stringify(map))
-				}).catch((_e) => { })
-			},
-			handleRefresherrefresh() {
-				this.refresherTriggered = true
-				this.requestData().finally(() => {
-					this.refresherTriggered = false
-				})
-			},
-			requestData(): Promise<any> {
-				if (this.loading) {
-					return Promise.resolve(true)
-				}
-				this.loading = true
-				uni.showLoading({ title: '加载中', mask: true })
-				return new Promise<any>((resolve, reject) => {
-					processSurrogatePage({
-						pageNum: 1,
-						pageSize: 50
-					} as UTSJSONObject).then((res) => {
-						const data = res as UTSJSONObject
-						this.list = [] as UTSJSONObject[]
-						const rows = data.getArray('rows')
-						if (rows != null) {
-							for (let i = 0; i < rows.length; i++) {
-								this.list.push(rows[i] as UTSJSONObject)
-							}
-						}
-						resolve(true)
-					}).catch((err) => {
-						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-						reject(err)
-					}).finally(() => {
-						uni.hideLoading()
-						this.loading = false
-					})
-				})
-			},
-			onAdd() {
-				uni.navigateTo({
-					url: '/pages/personal/surrogate-form'
-				})
-			},
-			onEdit(item: UTSJSONObject) {
-				const id = item.getString('id') ?? ''
-				uni.navigateTo({
-					url: '/pages/personal/surrogate-form?id=' + id
-				})
-			},
-			onRemove(item: UTSJSONObject) {
-				const id = item.getString('id') ?? ''
-				uni.showModal({
-					title: '删除委托',
-					content: '确定删除该委托代理规则？',
-					success: (res: ShowModalSuccess) => {
-						if (!res.confirm) return
-						processSurrogateRemove(id).then((_r) => {
-							uni.showToast({ title: '已删除', icon: 'success' })
-							this.requestData()
-						}).catch((err) => {
-							uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-						})
-					}
-				})
+				} catch (e) { }
 			}
 		}
+		// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
+		userSelectRows().then((rows) => {
+			const map = {} as UTSJSONObject
+			for (let i = 0; i < rows.length; i++) {
+				const row = rows[i]
+				const v = row.getString('value')
+				const l = row.getString('label')
+				if (v != null && l != null) {
+					map[v!] = l!
+				}
+			}
+			userNames.value = map
+			uni.setStorageSync('app:user:names', JSON.stringify(map))
+		}).catch((_e) => { })
 	}
+
+	function requestData(): Promise<any> {
+		if (loading.value) {
+			return Promise.resolve(true)
+		}
+		loading.value = true
+		uni.showLoading({ title: '加载中', mask: true })
+		return new Promise<any>((resolve, reject) => {
+			processSurrogatePage({
+				pageNum: 1,
+				pageSize: 50
+			} as UTSJSONObject).then((res) => {
+				const data = res as UTSJSONObject
+				list.value = [] as UTSJSONObject[]
+				const rows = data.getArray('rows')
+				if (rows != null) {
+					for (let i = 0; i < rows.length; i++) {
+						list.value.push(rows[i] as UTSJSONObject)
+					}
+				}
+				resolve(true)
+			}).catch((err) => {
+				uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+				reject(err)
+			}).finally(() => {
+				uni.hideLoading()
+				loading.value = false
+			})
+		})
+	}
+
+	function handleRefresherrefresh() {
+		refresherTriggered.value = true
+		requestData().finally(() => {
+			refresherTriggered.value = false
+		})
+	}
+
+	function onAdd() {
+		uni.navigateTo({
+			url: '/pages/personal/surrogate-form'
+		})
+	}
+
+	function onEdit(item: UTSJSONObject) {
+		const id = item.getString('id') ?? ''
+		uni.navigateTo({
+			url: '/pages/personal/surrogate-form?id=' + id
+		})
+	}
+
+	function onRemove(item: UTSJSONObject) {
+		const id = item.getString('id') ?? ''
+		uni.showModal({
+			title: '删除委托',
+			content: '确定删除该委托代理规则？',
+			success: (res: ShowModalSuccess) => {
+				if (!res.confirm) return
+				processSurrogateRemove(id).then((_r) => {
+					uni.showToast({ title: '已删除', icon: 'success' })
+					requestData()
+				}).catch((err) => {
+					uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+				})
+			}
+		})
+	}
+
+	onShow(() => {
+		requestData()
+		loadUserNames()
+		loadFlowNames().then((map) => {
+			flowNames.value = map
+			flowNameTick.value = flowNameTick.value + 1
+		})
+	})
 </script>
 <style lang="less">
 	.m-sg-list {

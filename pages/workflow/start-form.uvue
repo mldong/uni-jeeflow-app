@@ -22,201 +22,199 @@
 		</view>
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
 	import { SchemaField, resolveFormSchema, calcLeaveDays, schemaFromGraph, schemaFromTableModel, withProcessFormPrefix, isSchemaWfForm, buildInitiatorExtraFields, applyFieldDefaults } from '@/util/form_schemas.uts'
 	import { processDefineDetail, processDefineGetLastByName, processDefineStartAndExecute } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		components: {
-			mSchemaForm
-		},
-		data() {
-			return {
-				defineId: '',
-				// 流程定义 jsonObject（附加字段四开关从这里读）
-				defineJson: null as UTSJSONObject | null,
-				schemaTitle: '发起流程',
-				schemaFields: [] as SchemaField[],
-				formData: {} as UTSJSONObject,
-				prefillData: null as UTSJSONObject | null,
-				submitting: false
-			};
-		},
-		onLoad(options: OnLoadOptions) {
-			this.defineId = options['defineId'] ?? ''
-			const defineName = options['defineName'] ?? ''
-			// 重新发起：列表页写入的 f_* 预填
-			const prefillRaw = uni.getStorageSync('pages:workflow:start-form:prefill')
-			if (typeof prefillRaw === 'string') {
-				const s = prefillRaw as string
-				if (s.length > 0) {
-					try {
-						this.prefillData = JSON.parse(s) as UTSJSONObject
-					} catch (_e) {
-						this.prefillData = {} as UTSJSONObject
-					}
-					uni.removeStorageSync('pages:workflow:start-form:prefill')
-				}
-			}
-			if (this.defineId.length > 0) {
-				this.loadDefine(this.defineId)
-			} else if (defineName.length > 0) {
-				// 快捷入口：按流程名取最新版
-				uni.showLoading({ title: '加载中', mask: true })
-				processDefineGetLastByName(defineName).then((res) => {
-					uni.hideLoading()
-					const data = res as UTSJSONObject
-					const id = data.getString('id') ?? ''
-					if (id.length > 0) {
-						this.defineId = id
-						this.loadDefine(id)
-					} else {
-						uni.showToast({ title: '流程不存在', icon: 'none' })
-					}
-				}).catch((err) => {
-					uni.hideLoading()
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				})
-			}
-		},
-		methods: {
-			// 表单字段落位：业务字段 + 流程级附加字段（四开关）合并，默认值先灌、prefill 后覆盖
-			applyFormFields(fields: SchemaField[]) {
-				const extras = buildInitiatorExtraFields(this.defineJson, fields)
-				const all: SchemaField[] = []
-				for (let i = 0; i < fields.length; i++) {
-					all.push(fields[i])
-				}
-				for (let i = 0; i < extras.length; i++) {
-					all.push(extras[i])
-				}
-				this.schemaFields = all
-				applyFieldDefaults(this.formData, all)
-				this.applyPrefill()
-			},
-			applyPrefill() {
-				if (this.prefillData == null) {
-					return
-				}
-				this.prefillData!.toMap().forEach((value, key) => {
-					this.formData[key] = value
-				})
-				this.prefillData = null
-			},
-			loadDefine(id: string) {
-				uni.showLoading({ title: '加载中', mask: true })
-				processDefineDetail(id).then((res) => {
-					const data = res as UTSJSONObject
-					this.schemaTitle = data.getString('displayName') ?? '发起流程'
-					const jsonObject = data.getJSON('jsonObject')
-					this.defineJson = jsonObject
-					const instanceUrl = jsonObject != null ? (jsonObject!.getString('instanceUrl') ?? '') : ''
-					const defineName = data.getString('name') ?? ''
-					// 对齐 vben：只按 instanceUrl → wfFormComponentMap；SchemaWfForm 才走 __schema__/getByTableName
-					if (isSchemaWfForm(instanceUrl)) {
-						if (jsonObject != null) {
-							const embedded = schemaFromGraph(jsonObject!)
-							if (embedded != null) {
-								uni.hideLoading()
-								this.applyFormFields(embedded!)
-								return
-							}
-						}
-						if (defineName.length > 0) {
-							schemaGetByTableName(defineName).then((modelRes) => {
-								uni.hideLoading()
-								const fields = schemaFromTableModel(modelRes as UTSJSONObject)
-								if (fields != null) {
-									this.applyFormFields(fields!)
-								} else {
-									uni.showToast({ title: '元数据表单加载失败: ' + defineName, icon: 'none' })
-								}
-							}).catch((err) => {
-								uni.hideLoading()
-								uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-							})
-							return
-						}
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	const defineId = ref('')
+	// 流程定义 jsonObject（附加字段四开关从这里读）
+	const defineJson = ref<UTSJSONObject | null>(null)
+	const schemaTitle = ref('发起流程')
+	const schemaFields = ref<SchemaField[]>([])
+	const formData = ref<UTSJSONObject>({} as UTSJSONObject)
+	const prefillData = ref<UTSJSONObject | null>(null)
+	const submitting = ref(false)
+
+	function applyPrefill(): void {
+		if (prefillData.value == null) {
+			return
+		}
+		prefillData.value!.toMap().forEach((value, key) => {
+			formData.value[key] = value
+		})
+		prefillData.value = null
+	}
+
+	// 表单字段落位：业务字段 + 流程级附加字段（四开关）合并，默认值先灌、prefill 后覆盖
+	function applyFormFields(fields: SchemaField[]): void {
+		const extras = buildInitiatorExtraFields(defineJson.value, fields)
+		const all: SchemaField[] = []
+		for (let i = 0; i < fields.length; i++) {
+			all.push(fields[i])
+		}
+		for (let i = 0; i < extras.length; i++) {
+			all.push(extras[i])
+		}
+		schemaFields.value = all
+		applyFieldDefaults(formData.value, all)
+		applyPrefill()
+	}
+
+	function loadDefine(id: string): void {
+		uni.showLoading({ title: '加载中', mask: true })
+		processDefineDetail(id).then((res) => {
+			const data = res as UTSJSONObject
+			schemaTitle.value = data.getString('displayName') ?? '发起流程'
+			const jsonObject = data.getJSON('jsonObject')
+			defineJson.value = jsonObject
+			const instanceUrl = jsonObject != null ? (jsonObject!.getString('instanceUrl') ?? '') : ''
+			const defineName = data.getString('name') ?? ''
+			// 对齐 vben：只按 instanceUrl → wfFormComponentMap；SchemaWfForm 才走 __schema__/getByTableName
+			if (isSchemaWfForm(instanceUrl)) {
+				if (jsonObject != null) {
+					const embedded = schemaFromGraph(jsonObject!)
+					if (embedded != null) {
 						uni.hideLoading()
-						uni.showToast({ title: 'SchemaWfForm 缺少 __schema__ 与 name', icon: 'none' })
+						applyFormFields(embedded!)
 						return
 					}
-					const named = resolveFormSchema(instanceUrl)
-					if (named != null) {
+				}
+				if (defineName.length > 0) {
+					schemaGetByTableName(defineName).then((modelRes) => {
 						uni.hideLoading()
-						this.schemaTitle = named!.title
-						this.applyFormFields(named!.fields)
-						return
-					}
-					uni.hideLoading()
-					const tip = instanceUrl.length > 0
-						? ('未注册表单组件: ' + instanceUrl)
-						: '流程未配置 instanceUrl'
-					uni.showToast({ title: tip, icon: 'none' })
-				}).catch((err) => {
-					uni.hideLoading()
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				})
-			},
-						onFormChange(_formData: UTSJSONObject) {
-				// 请假天数自动计算
-				if (this.formData.getString('f_startTime') != null || this.formData.getString('f_endTime') != null) {
-					const days = calcLeaveDays(this.formData)
-					if (days > 0) {
-						this.formData['f_day'] = days
-					}
-				}
-			},
-			validate(): string {
-				for (let i = 0; i < this.schemaFields.length; i++) {
-					const field = this.schemaFields[i]
-					if (!field.required) {
-						continue
-					}
-					const v = this.formData.getString(field.field)
-					const n = this.formData.getNumber(field.field)
-					const empty = (v == null || v!.length == 0) && n == null
-					if (empty) {
-						return field.label + '不能为空'
-					}
-				}
-				return ''
-			},
-			handleSubmit() {
-				if (this.submitting) {
+						const fields = schemaFromTableModel(modelRes as UTSJSONObject)
+						if (fields != null) {
+							applyFormFields(fields!)
+						} else {
+							uni.showToast({ title: '元数据表单加载失败: ' + defineName, icon: 'none' })
+						}
+					}).catch((err) => {
+						uni.hideLoading()
+						uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+					})
 					return
 				}
-				const msg = this.validate()
-				if (msg.length > 0) {
-					uni.showToast({ title: msg, icon: 'none' })
-					return
-				}
-				// 提交契约对齐 vben start-process：表单内 camelCase → 统一加 f_ 再提交
-				const param = {} as UTSJSONObject
-				param['processDefineId'] = this.defineId
-				withProcessFormPrefix(this.formData).toMap().forEach((value, key) => {
-					param[key] = value
-				})
-				this.submitting = true
-				uni.showLoading({ title: '提交中……', mask: true })
-				processDefineStartAndExecute(param).then((_res) => {
-					uni.hideLoading()
-					uni.showToast({ title: '发起成功', icon: 'success' })
-					uni.setStorageSync('pages:approval:approval:refresh', true)
-					setTimeout(() => {
-						uni.navigateBack()
-					}, 800)
-				}).catch((err) => {
-					uni.hideLoading()
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				}).finally(() => {
-					this.submitting = false
-				})
+				uni.hideLoading()
+				uni.showToast({ title: 'SchemaWfForm 缺少 __schema__ 与 name', icon: 'none' })
+				return
+			}
+			const named = resolveFormSchema(instanceUrl)
+			if (named != null) {
+				uni.hideLoading()
+				schemaTitle.value = named!.title
+				applyFormFields(named!.fields)
+				return
+			}
+			uni.hideLoading()
+			const tip = instanceUrl.length > 0
+				? ('未注册表单组件: ' + instanceUrl)
+				: '流程未配置 instanceUrl'
+			uni.showToast({ title: tip, icon: 'none' })
+		}).catch((err) => {
+			uni.hideLoading()
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		})
+	}
+
+	function onFormChange(_formData: UTSJSONObject): void {
+		// 请假天数自动计算
+		if (formData.value.getString('f_startTime') != null || formData.value.getString('f_endTime') != null) {
+			const days = calcLeaveDays(formData.value)
+			if (days > 0) {
+				formData.value['f_day'] = days
 			}
 		}
 	}
+
+	function validate(): string {
+		for (let i = 0; i < schemaFields.value.length; i++) {
+			const field = schemaFields.value[i]
+			if (!field.required) {
+				continue
+			}
+			const v = formData.value.getString(field.field)
+			const n = formData.value.getNumber(field.field)
+			const empty = (v == null || v!.length == 0) && n == null
+			if (empty) {
+				return field.label + '不能为空'
+			}
+		}
+		return ''
+	}
+
+	function handleSubmit(): void {
+		if (submitting.value) {
+			return
+		}
+		const msg = validate()
+		if (msg.length > 0) {
+			uni.showToast({ title: msg, icon: 'none' })
+			return
+		}
+		// 提交契约对齐 vben start-process：表单内 camelCase → 统一加 f_ 再提交
+		const param = {} as UTSJSONObject
+		param['processDefineId'] = defineId.value
+		withProcessFormPrefix(formData.value).toMap().forEach((value, key) => {
+			param[key] = value
+		})
+		submitting.value = true
+		uni.showLoading({ title: '提交中……', mask: true })
+		processDefineStartAndExecute(param).then((_res) => {
+			uni.hideLoading()
+			uni.showToast({ title: '发起成功', icon: 'success' })
+			uni.setStorageSync('pages:approval:approval:refresh', true)
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 800)
+		}).catch((err) => {
+			uni.hideLoading()
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		}).finally(() => {
+			submitting.value = false
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		defineId.value = options['defineId'] ?? ''
+		const defineName = options['defineName'] ?? ''
+		// 重新发起：列表页写入的 f_* 预填
+		const prefillRaw = uni.getStorageSync('pages:workflow:start-form:prefill')
+		if (typeof prefillRaw === 'string') {
+			const s = prefillRaw as string
+			if (s.length > 0) {
+				try {
+					prefillData.value = JSON.parse(s) as UTSJSONObject
+				} catch (_e) {
+					prefillData.value = {} as UTSJSONObject
+				}
+				uni.removeStorageSync('pages:workflow:start-form:prefill')
+			}
+		}
+		if (defineId.value.length > 0) {
+			loadDefine(defineId.value)
+		} else if (defineName.length > 0) {
+			// 快捷入口：按流程名取最新版
+			uni.showLoading({ title: '加载中', mask: true })
+			processDefineGetLastByName(defineName).then((res) => {
+				uni.hideLoading()
+				const data = res as UTSJSONObject
+				const id = data.getString('id') ?? ''
+				if (id.length > 0) {
+					defineId.value = id
+					loadDefine(id)
+				} else {
+					uni.showToast({ title: '流程不存在', icon: 'none' })
+				}
+			}).catch((err) => {
+				uni.hideLoading()
+				uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+			})
+		}
+	})
 </script>
 <style lang="less">
 	.m-form-card {

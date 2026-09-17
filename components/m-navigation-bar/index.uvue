@@ -24,91 +24,78 @@
 	</view>
 </template>
 
-<script>
-	export default {
-		name:"m-navigation-bar",
-		props: {
-			title: {
-				type: String,
-				default: ''
-			},
-			icon: {
-				type: String,
-				default: 'left'
-			},
-			align: {
-				type: String,
-				default: 'center'
-			},
-			showBack: { // 显示返回区域
-				type: Boolean,
-				default: true
-			},
-			beforeBack: { // 返回前处理，如果返回Promise.resolve(false),则不执行返回
-				type: Function as PropType<() => Promise<Boolean>>
-			},
-			moreWidth: {
-				type: String,
-				default: '64rpx'
-			}
-		},
-		emits: ['back','more'],
-		data() {
-			return {
-				
-			};
-		},
-		computed:{
-			titleClass:():String=>{
-				if(this.showBack) {
-					if(this.$slots.has('more')) {
-						return 'm-title center';
-					} else {
-						return 'm-title center'
-					}
-				}
-				return 'm-title'
-			},
-			titleContentClass:():String=>{
-				let n = 0;
-				if(this.showBack) {
-					n++;
-				}
-				if(this.$slots.has('more')) {
-					n++;
-				}
-				const w = 750 - n*64;
-				if(this.align == 'left') {
-					if(this.showBack) {
-						return `justify-content-flex-start align-items-flex-center row w-${w} h-88 ml-64`
-					} else {
-						return `justify-content-flex-start align-items-flex-center row w-${w} h-88`
-					}
-				} else if(this.align == 'right') {
-					return `justify-content-flex-end align-items-flex-center row w-${w} h-88`
-				}
-				return `center row w-${w} h-88`
-			}
-		},
-		methods:{
-			handleBack(){
-				if(this.beforeBack !=null) {
-					this.beforeBack!().then((res=>{
-						if(res) {
-							uni.navigateBack()
-						}
-						this.$emit('back')
-					}))
-				} else {
-					uni.navigateBack()
-					this.$emit('back')
-				}
-				
-			},
-			onMore(){
-				this.$emit('more')
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	type Props = {
+		title?: string,
+		icon?: string,
+		align?: string,
+		showBack?: boolean,
+		// 返回前处理，如果返回Promise.resolve(false),则不执行返回
+		beforeBack?: () => Promise<Boolean>,
+		moreWidth?: string
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		title: '',
+		icon: 'left',
+		align: 'center',
+		showBack: true,
+		moreWidth: '64rpx'
+	})
+
+	const emit = defineEmits(['back', 'more'])
+
+	const slots = useSlots()
+
+	const titleClass = computed((): String => {
+		if (props.showBack) {
+			if (slots.has('more')) {
+				return 'm-title center';
+			} else {
+				return 'm-title center'
 			}
 		}
+		return 'm-title'
+	})
+
+	const titleContentClass = computed((): String => {
+		let n = 0;
+		if (props.showBack) {
+			n++;
+		}
+		if (slots.has('more')) {
+			n++;
+		}
+		const w = 750 - n * 64;
+		if (props.align == 'left') {
+			if (props.showBack) {
+				return `justify-content-flex-start align-items-flex-center row w-${w} h-88 ml-64`
+			} else {
+				return `justify-content-flex-start align-items-flex-center row w-${w} h-88`
+			}
+		} else if (props.align == 'right') {
+			return `justify-content-flex-end align-items-flex-center row w-${w} h-88`
+		}
+		return `center row w-${w} h-88`
+	})
+
+	function handleBack() {
+		if (props.beforeBack != null) {
+			props.beforeBack!().then((res => {
+				if (res) {
+					uni.navigateBack()
+				}
+				emit('back')
+			}))
+		} else {
+			uni.navigateBack()
+			emit('back')
+		}
+
+	}
+	function onMore() {
+		emit('more')
 	}
 </script>
 

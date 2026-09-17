@@ -31,116 +31,113 @@
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { userSelectRows } from '@/api/user.uts'
-	export default {
-		name: "m-timeline",
-		props: {
-			// approvalRecord 行：对齐 vben approval-record.vue → 操作人用 ext.u_realName
-			records: {
-				type: Array as PropType<UTSJSONObject[]>,
-				default: [] as UTSJSONObject[]
-			}
-		},
-		data() {
-			return {
-				userNames: {} as UTSJSONObject,
-				userNamesLoaded: false,
-				// 姓名表刷新后驱动模板重算 operatorText
-				nameTick: 0
-			};
-		},
-		computed: {
 
-		},
-		mounted() {
-			this.loadUserNames()
-		},
-			methods: {
-				// 首节点是申请人提交动作，其余是审批动作
-				operatorLabel(index: number): string {
-					return index == 0 ? '申请人：' : '审批人：'
-				},
-				stateText(state: number | null): string {
-				if (state == null) return ''
-				if (state == 10) return '审批中'
-				if (state == 20) return '已同意'
-				if (state == 30) return '已退回'
-				if (state == 99) return '已废弃'
-				return '状态' + state.toString()
-			},
-			commentText(item: UTSJSONObject): string {
-				const variable = item.getJSON('variable')
-				if (variable != null) {
-					const c = variable!.getString('tf_approvalComment')
-					if (c != null && c.length > 0) return c!
+	type Props = {
+		// approvalRecord 行：对齐 vben approval-record.vue → 操作人用 ext.u_realName
+		records?: UTSJSONObject[]
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		records: (): UTSJSONObject[] => [] as UTSJSONObject[]
+	})
+
+	const userNames = ref<UTSJSONObject>({} as UTSJSONObject)
+	const userNamesLoaded = ref(false)
+	// 姓名表刷新后驱动模板重算 operatorText
+	const nameTick = ref(0)
+
+	// 首节点是申请人提交动作，其余是审批动作
+	function operatorLabel(index: number): string {
+		return index == 0 ? '申请人：' : '审批人：'
+	}
+
+	function stateText(state: number | null): string {
+		if (state == null) return ''
+		if (state == 10) return '审批中'
+		if (state == 20) return '已同意'
+		if (state == 30) return '已退回'
+		if (state == 99) return '已废弃'
+		return '状态' + state.toString()
+	}
+
+	function commentText(item: UTSJSONObject): string {
+		const variable = item.getJSON('variable')
+		if (variable != null) {
+			const c = variable!.getString('tf_approvalComment')
+			if (c != null && c.length > 0) return c!
+		}
+		const ext = item.getJSON('ext')
+		if (ext != null) {
+			const c2 = ext!.getString('tf_approvalComment')
+			if (c2 != null && c2.length > 0) return c2!
+		}
+		return ''
+	}
+
+	function operatorText(item: UTSJSONObject): string {
+		// 触达 nameTick，保证姓名表异步到位后重新渲染
+		const _tick = nameTick.value
+		// 1) 对齐 vben：ext.u_realName
+		const ext = item.getJSON('ext')
+		if (ext != null) {
+			const rn = ext!.getString('u_realName') ?? ''
+			if (rn.length > 0) return rn
+		}
+		const variable = item.getJSON('variable')
+		if (variable != null) {
+			const rn2 = variable!.getString('u_realName') ?? ''
+			if (rn2.length > 0) return rn2
+		}
+		// 2) operator id → /sys/user/select 姓名表
+		const op = item.getString('operator') ?? ''
+		if (op.length == 0) return ''
+		const name = userNames.value.getString(op)
+		if (name != null && name.length > 0) return name!
+		return op
+	}
+
+	// operator id → 姓名（/sys/user/select 免权限下拉，storage 缓存）
+	function loadUserNames() {
+		const cached = uni.getStorageSync('app:user:names')
+		if (cached != null) {
+			try {
+				const obj = JSON.parse(cached.toString()) as UTSJSONObject
+				if (obj != null) {
+					userNames.value = obj!
+					nameTick.value = nameTick.value + 1
 				}
-				const ext = item.getJSON('ext')
-				if (ext != null) {
-					const c2 = ext!.getString('tf_approvalComment')
-					if (c2 != null && c2.length > 0) return c2!
-				}
-				return ''
-			},
-			operatorText(item: UTSJSONObject): string {
-				// 触达 nameTick，保证姓名表异步到位后重新渲染
-				const _tick = this.nameTick
-				// 1) 对齐 vben：ext.u_realName
-				const ext = item.getJSON('ext')
-				if (ext != null) {
-					const rn = ext!.getString('u_realName') ?? ''
-					if (rn.length > 0) return rn
-				}
-				const variable = item.getJSON('variable')
-				if (variable != null) {
-					const rn2 = variable!.getString('u_realName') ?? ''
-					if (rn2.length > 0) return rn2
-				}
-				// 2) operator id → /sys/user/select 姓名表
-				const op = item.getString('operator') ?? ''
-				if (op.length == 0) return ''
-				const name = this.userNames.getString(op)
-				if (name != null && name.length > 0) return name!
-				return op
-			},
-			// operator id → 姓名（/sys/user/select 免权限下拉，storage 缓存）
-			loadUserNames() {
-				const cached = uni.getStorageSync('app:user:names')
-				if (cached != null) {
-					try {
-						const obj = JSON.parse(cached.toString()) as UTSJSONObject
-						if (obj != null) {
-							this.userNames = obj!
-							this.nameTick = this.nameTick + 1
-						}
-					} catch (e) {
-						// 忽略缓存解析失败
-					}
-				}
-				if (this.userNamesLoaded) {
-					return
-				}
-				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
-				userSelectRows().then((rows) => {
-					const map = {} as UTSJSONObject
-					for (let i = 0; i < rows.length; i++) {
-						const row = rows[i]
-						const v = row.getString('value')
-						const l = row.getString('label')
-						if (v != null && l != null) {
-							map[v!] = l!
-						}
-					}
-					this.userNames = map
-					this.userNamesLoaded = true
-					this.nameTick = this.nameTick + 1
-					uni.setStorageSync('app:user:names', JSON.stringify(map))
-				}).catch((_err) => {
-					// 静默失败：已办节点仍可读 ext.u_realName
-				})
+			} catch (e) {
+				// 忽略缓存解析失败
 			}
 		}
+		if (userNamesLoaded.value) {
+			return
+		}
+		// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
+		userSelectRows().then((rows) => {
+			const map = {} as UTSJSONObject
+			for (let i = 0; i < rows.length; i++) {
+				const row = rows[i]
+				const v = row.getString('value')
+				const l = row.getString('label')
+				if (v != null && l != null) {
+					map[v!] = l!
+				}
+			}
+			userNames.value = map
+			userNamesLoaded.value = true
+			nameTick.value = nameTick.value + 1
+			uni.setStorageSync('app:user:names', JSON.stringify(map))
+		}).catch((_err) => {
+			// 静默失败：已办节点仍可读 ext.u_realName
+		})
 	}
+
+	// mounted（组件挂载即拉姓名表；组合式下 setup 体直接调用，时序等效）
+	loadUserNames()
 </script>
 
 <style lang="less">

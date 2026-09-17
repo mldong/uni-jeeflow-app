@@ -33,60 +33,51 @@
 	</view>
 </template>
 
-<script>
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { ListTitleType } from './index.uts'
-	export default {
-		name:"m-list-title",
-		props: {
-			group: {
-				type: Object as PropType<ListTitleType>
-			},
-			dataSource: {
-				type: Array as PropType<ListTitleType[]>,
-				default: [] as ListTitleType[]
-			},
-			rightIcon: {
-				type: String,
-				default: 'right'
-			},
-			ifShow:{
-				type: Function as PropType<(item: ListTitleType)=>boolean>
-			},
-			height: {
-				type: Number,
-				default: 72
-			}
-		},
-		emits: ['itemTap','itemLongpress'],
-		data() {
-			return {
-				
-			};
-		},
-		computed:{
-			mDataSource:():ListTitleType[]=>{
-				if(this.ifShow!=null) {
-					const dataSource = [] as ListTitleType[];
-					this.dataSource.forEach(item=>{
-						const a = this.ifShow!(item)
-						if(a == true) {
-							dataSource.push(item);
-						}
-					})
-					return dataSource;
-					
+	// 模板里的 $collUtil/$strUtil/$slots 原靠 globalProperties/实例属性，组合式下改为 setup 绑定
+	// （setup 绑定对模板可见；$slots 用 useSlots() 以原名暴露，模板零改动）
+	import { $collUtil } from '@/util/array_util'
+	import { $strUtil } from '@/util/str_util'
+	const $slots = useSlots()
+
+	type Props = {
+		group?: ListTitleType,
+		dataSource?: ListTitleType[],
+		rightIcon?: string,
+		ifShow?: (item: ListTitleType) => boolean,
+		height?: number
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		dataSource: (): ListTitleType[] => [] as ListTitleType[],
+		rightIcon: 'right',
+		height: 72
+	})
+
+	const emit = defineEmits(['itemTap', 'itemLongpress'])
+
+	const mDataSource = computed((): ListTitleType[] => {
+		if (props.ifShow != null) {
+			const dataSource = [] as ListTitleType[];
+			props.dataSource.forEach(item => {
+				const a = props.ifShow!(item)
+				if (a == true) {
+					dataSource.push(item);
 				}
-				return this.dataSource;
-			}
-		},
-		methods: {
-			onTap(item:ListTitleType){
-				this.$emit('itemTap',item)
-			},
-			onLongpress(item: ListTitleType){
-				this.$emit('itemLongpress',item)
-			}
+			})
+			return dataSource;
+
 		}
+		return props.dataSource;
+	})
+
+	function onTap(item: ListTitleType) {
+		emit('itemTap', item)
+	}
+	function onLongpress(item: ListTitleType) {
+		emit('itemLongpress', item)
 	}
 </script>
 

@@ -59,238 +59,242 @@
 			:value="datePickerValue" v-model:visible="datePickerVisible" @ok="onDateOk"></m-picker-year-month>
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import mPickerYearMonth from '@/components/m-picker-year-month/index.uvue'
 	import { processSurrogateDetail, processSurrogateSave, processSurrogateUpdate, processDefinePage } from '@/api/workflow.uts'
 	import { userSelectRows } from '@/api/user.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		components: {
-			mPickerYearMonth
-		},
-		data() {
-			return {
-				id: '',
-				processName: '',
-				surrogateId: '',
-				userNames: {} as UTSJSONObject,
-				startDate: '',
-				endDate: '',
-				enabled: true,
-				datePickerVisible: false,
-				datePickerValue: '',
-				datePickerTarget: 'start',
-				defines: [] as UTSJSONObject[],
-				users: [] as UTSJSONObject[],
-				saving: false
-			};
-		},
-		onLoad(options: OnLoadOptions) {
-			this.id = options['id'] ?? ''
-			this.loadUserNames()
-			this.loadDefines()
-			this.loadUsers()
-			if (this.id.length > 0) {
-				this.loadDetail()
+	const id = ref('')
+	const processName = ref('')
+	const surrogateId = ref('')
+	const userNames = ref<UTSJSONObject>({} as UTSJSONObject)
+	const startDate = ref('')
+	const endDate = ref('')
+	const enabled = ref(true)
+	const datePickerVisible = ref(false)
+	const datePickerValue = ref('')
+	const datePickerTarget = ref('start')
+	const defines = ref<UTSJSONObject[]>([])
+	const users = ref<UTSJSONObject[]>([])
+	const saving = ref(false)
+
+	function dayOf(iso: string): string {
+		if (iso.length == 0) {
+			return ''
+		}
+		let t = iso.replace('T', ' ')
+		const sp = t.indexOf(' ')
+		return sp > 0 ? t.substring(0, sp) : t
+	}
+
+	async function loadDetail() {
+		uni.showLoading({ title: '加载中', mask: true })
+		try {
+			const res = await processSurrogateDetail(id.value)
+			const d = res as UTSJSONObject
+			if ((d.getString('id') ?? '') == '') {
+				uni.showToast({ title: '委托不存在', icon: 'none' })
+				return
 			}
-		},
-		methods: {
-			async loadDetail() {
-				uni.showLoading({ title: '加载中', mask: true })
+			processName.value = d.getString('processName') ?? ''
+			surrogateId.value = d.getString('surrogate') ?? ''
+			startDate.value = dayOf(d.getString('startTime') ?? '')
+			endDate.value = dayOf(d.getString('endTime') ?? '')
+			enabled.value = (d.getNumber('enabled') ?? 1) == 1
+		} catch (err) {
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		} finally {
+			uni.hideLoading()
+		}
+	}
+
+	function loadUserNames() {
+		const cached = uni.getStorageSync('app:user:names')
+		if (cached != null) {
+			const cs = cached.toString()
+			if (cs.length > 0) {
 				try {
-					const res = await processSurrogateDetail(this.id)
-					const d = res as UTSJSONObject
-					if ((d.getString('id') ?? '') == '') {
-						uni.showToast({ title: '委托不存在', icon: 'none' })
-						return
+					const obj = JSON.parse(cs) as UTSJSONObject
+					if (obj != null) {
+						userNames.value = obj!
 					}
-					this.processName = d.getString('processName') ?? ''
-					this.surrogateId = d.getString('surrogate') ?? ''
-					this.startDate = this.dayOf(d.getString('startTime') ?? '')
-					this.endDate = this.dayOf(d.getString('endTime') ?? '')
-					this.enabled = (d.getNumber('enabled') ?? 1) == 1
-				} catch (err) {
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				} finally {
-					uni.hideLoading()
-				}
-			},
-			dayOf(iso: string): string {
-				if (iso.length == 0) {
-					return ''
-				}
-				let t = iso.replace('T', ' ')
-				const sp = t.indexOf(' ')
-				return sp > 0 ? t.substring(0, sp) : t
-			},
-			loadUserNames() {
-				const cached = uni.getStorageSync('app:user:names')
-				if (cached != null) {
-					const cs = cached.toString()
-					if (cs.length > 0) {
-						try {
-							const obj = JSON.parse(cs) as UTSJSONObject
-							if (obj != null) {
-								this.userNames = obj!
-							}
-						} catch (e) { }
-					}
-				}
-			},
-			userNameOf(id: string): string {
-				const name = this.userNames.getString(id)
-				if (name != null && name.length > 0) {
-					return name!
-				}
-				return id
-			},
-			loadDefines() {
-				processDefinePage({
-					pageNum: 1,
-					pageSize: 100
-				} as UTSJSONObject).then((res) => {
-					const data = res as UTSJSONObject
-					const rows = data.getArray('rows')
-					if (rows != null) {
-						for (let i = 0; i < rows.length; i++) {
-							const row = rows[i] as UTSJSONObject
-							if ((row.getNumber('state') ?? 0) == 1) {
-								this.defines.push(row)
-							}
-						}
-					}
-				}).catch((_e) => { })
-			},
-			loadUsers() {
-				// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
-				userSelectRows().then((rows) => {
-					const map = {} as UTSJSONObject
-					for (let i = 0; i < rows.length; i++) {
-						const row = rows[i]
-						this.users.push(row)
-						const id = row.getString('value') ?? ''
-						const label = row.getString('label') ?? ''
-						if (id.length > 0 && label.length > 0) {
-							map[id] = label
-						}
-					}
-					this.userNames = map
-					uni.setStorageSync('app:user:names', JSON.stringify(map))
-				}).catch((_e) => { })
-			},
-			onPickProcess() {
-				const names: string[] = ['全部流程']
-				for (let i = 0; i < this.defines.length; i++) {
-					const name = this.defines[i].getString('displayName') ?? ''
-					let dup = false
-					for (let j = 0; j < names.length; j++) {
-						if (names[j] == name) { dup = true; break }
-					}
-					if (!dup) {
-						names.push(name)
-					}
-				}
-				uni.showActionSheet({
-					title: '选择委托流程',
-					itemList: names,
-					success: (res: ShowActionSheetSuccess) => {
-						if (res.tapIndex != null) {
-							const idx = parseInt(res.tapIndex.toString())
-							this.processName = idx == 0 ? '' : names[idx]
-						}
-					}
-				})
-			},
-			onPickUser() {
-				const names: string[] = []
-				for (let i = 0; i < this.users.length; i++) {
-					names.push(this.users[i].getString('label') ?? '')
-				}
-				uni.showActionSheet({
-					title: '选择代理人',
-					itemList: names,
-					success: (res: ShowActionSheetSuccess) => {
-						if (res.tapIndex != null) {
-							const idx = parseInt(res.tapIndex.toString())
-							if (idx >= 0 && idx < this.users.length) {
-								this.surrogateId = this.users[idx].getString('value') ?? ''
-							}
-						}
-					}
-				})
-			},
-			openDate(target: string) {
-				this.datePickerTarget = target
-				const current = target == 'start' ? this.startDate : this.endDate
-				if (current.length > 0) {
-					this.datePickerValue = current
-				} else {
-					const d = new Date()
-					const m = d.getMonth() + 1
-					const day = d.getDate()
-					this.datePickerValue = d.getFullYear().toString() + '-' + (m <= 9 ? '0' + m : m.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
-				}
-				this.datePickerVisible = true
-			},
-			onDateOk(e: UTSJSONObject) {
-				this.datePickerVisible = false
-				const year = e.getNumber('year') ?? 0
-				const month = e.getNumber('month') ?? 1
-				const day = e.getNumber('day') ?? 1
-				const dateStr = year.toString() + '-' + (month <= 9 ? '0' + month : month.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
-				if (this.datePickerTarget == 'start') {
-					this.startDate = dateStr
-				} else {
-					this.endDate = dateStr
-				}
-			},
-			onEnabledChange(e: SwitchChangeEvent) {
-				this.enabled = e.detail.value
-			},
-			async handleSave() {
-				if (this.saving) {
-					return
-				}
-				if (this.surrogateId.length == 0) {
-					uni.showToast({ title: '请选择代理人', icon: 'none' })
-					return
-				}
-				if (this.startDate.length == 0 || this.endDate.length == 0) {
-					uni.showToast({ title: '请选择委托起止日期', icon: 'none' })
-					return
-				}
-				const param = {
-					processName: this.processName,
-					surrogate: this.surrogateId,
-					startTime: this.startDate + ' 00:00:00',
-					endTime: this.endDate + ' 23:59:59',
-					enabled: this.enabled ? 1 : 0
-				} as UTSJSONObject
-				if (this.id.length > 0) {
-					param['id'] = this.id
-				}
-				this.saving = true
-				uni.showLoading({ title: '保存中……', mask: true })
-				try {
-					if (this.id.length > 0) {
-						await processSurrogateUpdate(param)
-					} else {
-						await processSurrogateSave(param)
-					}
-					uni.hideLoading()
-					uni.showToast({ title: '保存成功', icon: 'success' })
-					setTimeout(() => {
-						uni.navigateBack()
-					}, 600)
-				} catch (err) {
-					uni.hideLoading()
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				} finally {
-					this.saving = false
-				}
+				} catch (e) { }
 			}
 		}
 	}
+
+	function userNameOf(id: string): string {
+		const name = userNames.value.getString(id)
+		if (name != null && name.length > 0) {
+			return name!
+		}
+		return id
+	}
+
+	function loadDefines() {
+		processDefinePage({
+			pageNum: 1,
+			pageSize: 100
+		} as UTSJSONObject).then((res) => {
+			const data = res as UTSJSONObject
+			const rows = data.getArray('rows')
+			if (rows != null) {
+				for (let i = 0; i < rows.length; i++) {
+					const row = rows[i] as UTSJSONObject
+					if ((row.getNumber('state') ?? 0) == 1) {
+						defines.value.push(row)
+					}
+				}
+			}
+		}).catch((_e) => { })
+	}
+
+	function loadUsers() {
+		// 走 http 封装：token 失效同样吃静默续命/跳登录，不再裸 uni.request 绕过拦截器
+		userSelectRows().then((rows) => {
+			const map = {} as UTSJSONObject
+			for (let i = 0; i < rows.length; i++) {
+				const row = rows[i]
+				users.value.push(row)
+				const id = row.getString('value') ?? ''
+				const label = row.getString('label') ?? ''
+				if (id.length > 0 && label.length > 0) {
+					map[id] = label
+				}
+			}
+			userNames.value = map
+			uni.setStorageSync('app:user:names', JSON.stringify(map))
+		}).catch((_e) => { })
+	}
+
+	function onPickProcess() {
+		const names: string[] = ['全部流程']
+		for (let i = 0; i < defines.value.length; i++) {
+			const name = defines.value[i].getString('displayName') ?? ''
+			let dup = false
+			for (let j = 0; j < names.length; j++) {
+				if (names[j] == name) { dup = true; break }
+			}
+			if (!dup) {
+				names.push(name)
+			}
+		}
+		uni.showActionSheet({
+			title: '选择委托流程',
+			itemList: names,
+			success: (res: ShowActionSheetSuccess) => {
+				if (res.tapIndex != null) {
+					const idx = parseInt(res.tapIndex.toString())
+					processName.value = idx == 0 ? '' : names[idx]
+				}
+			}
+		})
+	}
+
+	function onPickUser() {
+		const names: string[] = []
+		for (let i = 0; i < users.value.length; i++) {
+			names.push(users.value[i].getString('label') ?? '')
+		}
+		uni.showActionSheet({
+			title: '选择代理人',
+			itemList: names,
+			success: (res: ShowActionSheetSuccess) => {
+				if (res.tapIndex != null) {
+					const idx = parseInt(res.tapIndex.toString())
+					if (idx >= 0 && idx < users.value.length) {
+						surrogateId.value = users.value[idx].getString('value') ?? ''
+					}
+				}
+			}
+		})
+	}
+
+	function openDate(target: string) {
+		datePickerTarget.value = target
+		const current = target == 'start' ? startDate.value : endDate.value
+		if (current.length > 0) {
+			datePickerValue.value = current
+		} else {
+			const d = new Date()
+			const m = d.getMonth() + 1
+			const day = d.getDate()
+			datePickerValue.value = d.getFullYear().toString() + '-' + (m <= 9 ? '0' + m : m.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
+		}
+		datePickerVisible.value = true
+	}
+
+	function onDateOk(e: UTSJSONObject) {
+		datePickerVisible.value = false
+		const year = e.getNumber('year') ?? 0
+		const month = e.getNumber('month') ?? 1
+		const day = e.getNumber('day') ?? 1
+		const dateStr = year.toString() + '-' + (month <= 9 ? '0' + month : month.toString()) + '-' + (day <= 9 ? '0' + day : day.toString())
+		if (datePickerTarget.value == 'start') {
+			startDate.value = dateStr
+		} else {
+			endDate.value = dateStr
+		}
+	}
+
+	function onEnabledChange(e: SwitchChangeEvent) {
+		enabled.value = e.detail.value
+	}
+
+	async function handleSave() {
+		if (saving.value) {
+			return
+		}
+		if (surrogateId.value.length == 0) {
+			uni.showToast({ title: '请选择代理人', icon: 'none' })
+			return
+		}
+		if (startDate.value.length == 0 || endDate.value.length == 0) {
+			uni.showToast({ title: '请选择委托起止日期', icon: 'none' })
+			return
+		}
+		const param = {
+			processName: processName.value,
+			surrogate: surrogateId.value,
+			startTime: startDate.value + ' 00:00:00',
+			endTime: endDate.value + ' 23:59:59',
+			enabled: enabled.value ? 1 : 0
+		} as UTSJSONObject
+		if (id.value.length > 0) {
+			param['id'] = id.value
+		}
+		saving.value = true
+		uni.showLoading({ title: '保存中……', mask: true })
+		try {
+			if (id.value.length > 0) {
+				await processSurrogateUpdate(param)
+			} else {
+				await processSurrogateSave(param)
+			}
+			uni.hideLoading()
+			uni.showToast({ title: '保存成功', icon: 'success' })
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 600)
+		} catch (err) {
+			uni.hideLoading()
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		} finally {
+			saving.value = false
+		}
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		id.value = options['id'] ?? ''
+		loadUserNames()
+		loadDefines()
+		loadUsers()
+		if (id.value.length > 0) {
+			loadDetail()
+		}
+	})
 </script>
 <style lang="less">
 	.m-form-card {

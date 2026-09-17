@@ -37,119 +37,123 @@
 		<!-- #endif -->
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { messagePage, messageSetRead } from '@/api/message.uts'
 	import { refreshTabBadges, applyMsgBadge } from '@/util/badge.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		data() {
-			return {
-				pageNum: 1,
-				pageSize: 15,
-				recordCount: 0,
-				list: [] as UTSJSONObject[],
-				refresherTriggered: false,
-				loading: false
-			};
-		},
-		onShow() {
-			this.reload()
-			refreshTabBadges()
-		},
-		methods: {
-			fmtTime(iso: string): string {
-				if (iso.length == 0) {
-					return ''
-				}
-				let t = iso.replace('T', ' ')
-				const dot = t.indexOf('.')
-				if (dot > 0) {
-					t = t.substring(0, dot)
-				}
-				return t
-			},
-			msgTypeText(item: UTSJSONObject): string {
-				const t = item.getNumber('msgType') ?? 0
-				if (t == 10) return '待办'
-				if (t == 20) return '通知'
-				if (t == 30) return '预警'
-				return ''
-			},
-			isUnread(item: UTSJSONObject): boolean {
-				return (item.getNumber('isRead') ?? 1) == 0
-			},
-			handleRefresherrefresh() {
-				this.refresherTriggered = true
-				this.reload().finally(() => {
-					this.refresherTriggered = false
-				})
-			},
-			loadMore() {
-				if (this.loading || this.list.length >= this.recordCount) {
-					return
-				}
-				this.pageNum++
-				this.requestData()
-			},
-			reload(): Promise<any> {
-				this.pageNum = 1
-				return this.requestData()
-			},
-			requestData(): Promise<any> {
-				this.loading = true
-				return new Promise<any>((resolve, reject) => {
-					messagePage({
-						pageNum: this.pageNum,
-						pageSize: this.pageSize
-					} as UTSJSONObject).then((res) => {
-						const data = res as UTSJSONObject
-						this.recordCount = data.getNumber('recordCount') ?? 0
-						if (this.pageNum == 1) {
-							this.list = [] as UTSJSONObject[]
-						}
-						const rows = data.getArray('rows')
-						if (rows != null) {
-							for (let i = 0; i < rows.length; i++) {
-								this.list.push(rows[i] as UTSJSONObject)
-							}
-						}
-						resolve(true)
-					}).catch((err) => {
-						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-						reject(err)
-					}).finally(() => {
-						this.loading = false
-					})
-				})
-			},
-			onTapItem(item: UTSJSONObject) {
-				const id = item.getString('id') ?? ''
-				if (id.length == 0) {
-					return
-				}
-				uni.navigateTo({
-					url: '/pages/message/detail?id=' + id
-				})
-			},
-			onMarkAllRead() {
-				uni.showModal({
-					title: '全部已读',
-					content: '将当前未读消息全部标记为已读？',
-					success: (res: ShowModalSuccess) => {
-						if (res.confirm) {
-							messageSetRead([] as string[]).then((_r) => {
-								applyMsgBadge(0)
-								this.reload()
-								uni.showToast({ title: '已全部标为已读', icon: 'none' })
-							}).catch((err) => {
-								uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-							})
-						}
-					}
-				})
-			}
+	const pageNum = ref(1)
+	const pageSize = ref(15)
+	const recordCount = ref(0)
+	const list = ref<UTSJSONObject[]>([])
+	const refresherTriggered = ref(false)
+	const loading = ref(false)
+
+	function fmtTime(iso: string): string {
+		if (iso.length == 0) {
+			return ''
 		}
+		let t = iso.replace('T', ' ')
+		const dot = t.indexOf('.')
+		if (dot > 0) {
+			t = t.substring(0, dot)
+		}
+		return t
 	}
+
+	function msgTypeText(item: UTSJSONObject): string {
+		const t = item.getNumber('msgType') ?? 0
+		if (t == 10) return '待办'
+		if (t == 20) return '通知'
+		if (t == 30) return '预警'
+		return ''
+	}
+
+	function isUnread(item: UTSJSONObject): boolean {
+		return (item.getNumber('isRead') ?? 1) == 0
+	}
+
+	function requestData(): Promise<any> {
+		loading.value = true
+		return new Promise<any>((resolve, reject) => {
+			messagePage({
+				pageNum: pageNum.value,
+				pageSize: pageSize.value
+			} as UTSJSONObject).then((res) => {
+				const data = res as UTSJSONObject
+				recordCount.value = data.getNumber('recordCount') ?? 0
+				if (pageNum.value == 1) {
+					list.value = [] as UTSJSONObject[]
+				}
+				const rows = data.getArray('rows')
+				if (rows != null) {
+					for (let i = 0; i < rows.length; i++) {
+						list.value.push(rows[i] as UTSJSONObject)
+					}
+				}
+				resolve(true)
+			}).catch((err) => {
+				uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+				reject(err)
+			}).finally(() => {
+				loading.value = false
+			})
+		})
+	}
+
+	function reload(): Promise<any> {
+		pageNum.value = 1
+		return requestData()
+	}
+
+	function handleRefresherrefresh() {
+		refresherTriggered.value = true
+		reload().finally(() => {
+			refresherTriggered.value = false
+		})
+	}
+
+	function loadMore() {
+		if (loading.value || list.value.length >= recordCount.value) {
+			return
+		}
+		pageNum.value++
+		requestData()
+	}
+
+	function onTapItem(item: UTSJSONObject) {
+		const id = item.getString('id') ?? ''
+		if (id.length == 0) {
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/message/detail?id=' + id
+		})
+	}
+
+	function onMarkAllRead() {
+		uni.showModal({
+			title: '全部已读',
+			content: '将当前未读消息全部标记为已读？',
+			success: (res: ShowModalSuccess) => {
+				if (res.confirm) {
+					messageSetRead([] as string[]).then((_r) => {
+						applyMsgBadge(0)
+						reload()
+						uni.showToast({ title: '已全部标为已读', icon: 'none' })
+					}).catch((err) => {
+						uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+					})
+				}
+			}
+		})
+	}
+
+	onShow(() => {
+		reload()
+		refreshTabBadges()
+	})
 </script>
 <style lang="less">
 .m-nav-more{

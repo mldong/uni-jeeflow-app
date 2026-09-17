@@ -5,27 +5,19 @@
 	</view>
 </template>
 
-<script>
-	export default {
-		name:"m-empty-data",
-		props: {
-			// 主文案，默认「暂无数据」保持旧行为
-			text: {
-				type: String,
-				default: '暂无数据'
-			},
-			// 可选引导副文案（如消息中心的「审批与抄送通知会出现在这里」）
-			subText: {
-				type: String,
-				default: ''
-			}
-		},
-		data() {
-			return {
-
-			};
-		}
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	type Props = {
+		// 主文案，默认「暂无数据」保持旧行为
+		text?: string,
+		// 可选引导副文案（如消息中心的「审批与抄送通知会出现在这里」）
+		subText?: string
 	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		text: '暂无数据',
+		subText: ''
+	})
 </script>
 
 <style lang="less">

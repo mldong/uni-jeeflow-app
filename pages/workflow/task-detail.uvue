@@ -131,7 +131,7 @@
 		</view>
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
 	import mTimeline from '@/components/m-timeline/m-timeline.uvue'
 	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
@@ -141,574 +141,578 @@
 	import { schemaGetByTableName } from '@/api/schema.uts'
 	import { userPage } from '@/api/user.uts'
 	import { uploadFile } from '@/api/file.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		components: {
-			mSchemaForm,
-			mTimeline,
-			mFlowNative,
-			mUserPicker
-		},
-		data() {
-			return {
-				taskId: '',
-				processInstanceId: '',
-				taskDisplayName: '',
-				instanceDisplayName: '',
-				instanceCreateTime: '',
-				executable: false,
-				isFirstTaskNode: false,
-				// 对齐 vben：performType===1 为会签
-				performType: 0,
-				formKey: '',
-				schemaFields: [] as SchemaField[],
-				// 流程级发起附加字段（f_nextNodeOperator/f_ccActors/f_applyReason/f_attachment，按开关回显）
-				extraFields: [] as SchemaField[],
-				formData: {} as UTSJSONObject,
-				fallbackRows: [] as UTSJSONObject[],
-				graph: null as UTSJSONObject | null,
-				highLight: null as UTSJSONObject | null,
-				records: [] as UTSJSONObject[],
-				// 审批记录并行加载中：时间线局部占位，不再全屏遮罩
-				recordsLoading: true,
-				users: [] as UTSJSONObject[],
-				comment: '',
-				submitting: false,
-				// ── 审批选项（对齐 vben task-form 默认审批表单）──
-				// 审批附件：fileInfoId 逗号串 + 回显文件名
-				approvalFileIds: '',
-				approvalFileNames: [] as string[],
-				// 指定下一节点处理人（普通节点；候选人来自 /wf/processTask/candidatePage）
-				isAssignNext: false,
-				nextNodeIds: [] as string[],
-				// 抄送（人员来自 /sys/user/select）
-				isCc: false,
-				ccIds: [] as string[],
-				// 下一节点候选人 {label,value}
-				candidates: [] as UTSJSONObject[],
-				// 选人弹层状态
-				pickerVisible: false,
-				pickerTitle: '',
-				pickerOptions: [] as UTSJSONObject[],
-				pickerSelected: [] as string[],
-				pickerMultiple: true,
-				pickerSource: ''
-			};
-		},
-		computed: {
-			isCountersign: (): boolean => {
-				return this.performType == 1
-			},
-			// 首任务节点待办：业务表单可编辑（重新提交，对齐 vben detail.vue view=false）
-			canEditBusiness: (): boolean => {
-				return this.executable && this.isFirstTaskNode
-			},
-			// 业务字段 + 发起附加字段合并渲染
-			allFields: (): SchemaField[] => {
-				const all: SchemaField[] = []
-				for (let i = 0; i < this.schemaFields.length; i++) {
-					all.push(this.schemaFields[i])
-				}
-				for (let i = 0; i < this.extraFields.length; i++) {
-					all.push(this.extraFields[i])
-				}
-				return all
-			},
-			nextNodeNames: (): string => {
-				return this.namesOf(this.candidates, this.nextNodeIds)
-			},
-			ccNames: (): string => {
-				return this.namesOf(this.users, this.ccIds)
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	const taskId = ref('')
+	const processInstanceId = ref('')
+	const taskDisplayName = ref('')
+	const instanceDisplayName = ref('')
+	const instanceCreateTime = ref('')
+	const executable = ref(false)
+	const isFirstTaskNode = ref(false)
+	// 对齐 vben：performType===1 为会签
+	const performType = ref<number>(0)
+	const formKey = ref('')
+	const schemaFields = ref<SchemaField[]>([])
+	// 流程级发起附加字段（f_nextNodeOperator/f_ccActors/f_applyReason/f_attachment，按开关回显）
+	const extraFields = ref<SchemaField[]>([])
+	const formData = ref<UTSJSONObject>({} as UTSJSONObject)
+	const fallbackRows = ref<UTSJSONObject[]>([])
+	const graph = ref<UTSJSONObject | null>(null)
+	const highLight = ref<UTSJSONObject | null>(null)
+	const records = ref<UTSJSONObject[]>([])
+	// 审批记录并行加载中：时间线局部占位，不再全屏遮罩
+	const recordsLoading = ref(true)
+	const users = ref<UTSJSONObject[]>([])
+	const comment = ref('')
+	const submitting = ref(false)
+	// ── 审批选项（对齐 vben task-form 默认审批表单）──
+	// 审批附件：fileInfoId 逗号串 + 回显文件名
+	const approvalFileIds = ref('')
+	const approvalFileNames = ref<string[]>([])
+	// 指定下一节点处理人（普通节点；候选人来自 /wf/processTask/candidatePage）
+	const isAssignNext = ref(false)
+	const nextNodeIds = ref<string[]>([])
+	// 抄送（人员来自 /sys/user/select）
+	const isCc = ref(false)
+	const ccIds = ref<string[]>([])
+	// 下一节点候选人 {label,value}
+	const candidates = ref<UTSJSONObject[]>([])
+	// 选人弹层状态
+	const pickerVisible = ref(false)
+	const pickerTitle = ref('')
+	const pickerOptions = ref<UTSJSONObject[]>([])
+	const pickerSelected = ref<string[]>([])
+	const pickerMultiple = ref(true)
+	const pickerSource = ref('')
+
+	const isCountersign = computed((): boolean => {
+		return performType.value == 1
+	})
+	// 首任务节点待办：业务表单可编辑（重新提交，对齐 vben detail.vue view=false）
+	const canEditBusiness = computed((): boolean => {
+		return executable.value && isFirstTaskNode.value
+	})
+	// 业务字段 + 发起附加字段合并渲染
+	const allFields = computed((): SchemaField[] => {
+		const all: SchemaField[] = []
+		for (let i = 0; i < schemaFields.value.length; i++) {
+			all.push(schemaFields.value[i])
+		}
+		for (let i = 0; i < extraFields.value.length; i++) {
+			all.push(extraFields.value[i])
+		}
+		return all
+	})
+	// ISO 时间 → yyyy-MM-dd HH:mm（截断到秒）
+	function fmtTime(iso: string): string {
+		if (iso.length == 0) {
+			return ''
+		}
+		// 2026-08-29T15:14:13.639+08:00 → 2026-08-29 15:14:13
+		let t = iso.replace('T', ' ')
+		const dot = t.indexOf('.')
+		if (dot > 0) {
+			t = t.substring(0, dot)
+		}
+		return t
+	}
+
+	// 无移动端 schema 的流程：实例 formData（f_ 去前缀双写）铺键值列表
+	function buildFallbackRows(inst: UTSJSONObject): void {
+		fallbackRows.value = [] as UTSJSONObject[]
+		const fd = inst.getJSON('formData')
+		if (fd == null) {
+			return
+		}
+		fd!.toMap().forEach((value, key) => {
+			if (key.startsWith('f_')) {
+				return
 			}
-		},
-		onLoad(options: OnLoadOptions) {
-			this.taskId = options['taskId'] ?? ''
-			this.loadAll()
-			this.loadUsers()
-		},
-		methods: {
-			async loadAll() {
-				if (this.taskId.length == 0) {
-					return
-				}
-				uni.showLoading({ title: '加载中', mask: true })
-				try {
-					// 1. 任务详情（整页门控；返回即渲染，后续模块渐进加载）
-					const res = await processTaskDetail(this.taskId)
-					uni.hideLoading()
-					const task = res as UTSJSONObject
-					this.taskDisplayName = task.getString('displayName') ?? ''
-					this.processInstanceId = task.getString('processInstanceId') ?? ''
-					this.executable = task.getBoolean('executable') == true
-					this.formKey = task.getString('formKey') ?? ''
-					this.performType = task.getNumber('performType') ?? 0
-					const ext = task.getJSON('ext')
-					if (ext != null) {
-						this.isFirstTaskNode = ext!.getBoolean('isFirstTaskNode') == true
-					}
-					// taskModel.form（节点表单 key）优先于任务 formKey
-					const taskModel = task.getJSON('taskModel')
-					if (taskModel != null) {
-						const nodeForm = taskModel!.getString('form') ?? ''
-						if (nodeForm.length > 0) {
-							this.formKey = nodeForm
-						}
-					}
-					if (this.processInstanceId.length == 0) {
-						return
-					}
-					// 3/4. 流程图高亮 · 审批记录：与实例详情并行，独立渲染、失败不阻断
-					processInstanceHighLight(this.processInstanceId).then((hl) => {
-						this.highLight = hl as UTSJSONObject
-					}).catch((_e) => {
-						// 高亮失败：流程图降级为无高亮渲染
-					})
-					processInstanceApprovalRecord(this.processInstanceId).then((res3) => {
-						const rows = res3 as UTSJSONObject[]
-						if (rows != null) {
-							this.records = rows
-						}
-					}).catch((_e) => {
-						// 记录失败：时间线保持空态
-					}).finally(() => {
-						this.recordsLoading = false
-					})
-					// 2. 实例详情（formData + 流程名）
-					const res2 = await processInstanceDetail(this.processInstanceId)
-					const inst = res2 as UTSJSONObject
-					this.instanceDisplayName = inst.getString('displayName') ?? ''
-					this.instanceCreateTime = this.fmtTime(inst.getString('createTime') ?? '')
-					// formData：引擎存 f_camel；动态 schema 字段为 camel，hydrate 后回显
-					const fd = inst.getJSON('formData')
-					if (fd != null) {
-						this.formData = fd!
-					}
-					const graph = inst.getJSON('jsonObject')
-					if (graph != null) {
-						this.graph = graph!
-					}
-					// 对齐 vben：只按 instanceUrl/formKey；SchemaWfForm → __schema__/getByTableName(name)
-					if (this.formKey.length == 0 && graph != null) {
-						this.formKey = graph!.getString('instanceUrl') ?? ''
-					}
-					const defineName = inst.getString('name') ?? (graph != null ? (graph!.getString('name') ?? '') : '')
-					const formUrl = this.formKey.length > 0
-						? this.formKey
-						: (graph != null ? (graph!.getString('instanceUrl') ?? '') : '')
-					if (isSchemaWfForm(formUrl)) {
-						if (graph != null) {
-							const embedded = schemaFromGraph(graph!)
-							if (embedded != null) {
-								this.schemaFields = embedded!
-							} else if (defineName.length > 0) {
-								try {
-									const modelRes = await schemaGetByTableName(defineName)
-									const tfields = schemaFromTableModel(modelRes as UTSJSONObject)
-									if (tfields != null) {
-										this.schemaFields = tfields!
-									}
-								} catch (_e) {
-									// ignore
-								}
-							}
-						}
-						if (this.schemaFields.length == 0) {
-							uni.showToast({ title: 'SchemaWfForm 元数据表单加载失败', icon: 'none' })
-						}
-					} else {
-						const named = resolveFormSchema(formUrl)
-						if (named != null) {
-							this.schemaFields = named!.fields
-						} else if (formUrl.length > 0) {
-							uni.showToast({ title: '未注册表单组件: ' + formUrl, icon: 'none' })
-						}
-					}
-					// 节点字段权限（对齐 vben：enableFieldPerm → taskModel.ext 的 PERMISSION_<fieldId>）
-					if (graph != null && graph!.getBoolean('enableFieldPerm') == true && task.getJSON('taskModel') != null) {
-						applyFieldPermissions(this.schemaFields, task.getJSON('taskModel')!.getJSON('ext'))
-					}
-					if (this.schemaFields.length > 0) {
-						hydrateSchemaFormData(this.formData, this.schemaFields)
-					} else {
-						this.buildFallbackRows(inst)
-					}
-					// 流程级发起附加字段回显：有值的必显；首节点待办可编辑时全量显示
-					const extras = buildInitiatorExtraFields(graph, this.schemaFields)
-					const showExtras: SchemaField[] = []
-					for (let i = 0; i < extras.length; i++) {
-						const ef = extras[i]
-						if (this.formData.get(ef.field) != null || (this.executable && this.isFirstTaskNode)) {
-							showExtras.push(ef)
-						}
-					}
-					this.extraFields = showExtras
-				} catch (err) {
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				} finally {
-					uni.hideLoading()
-				}
-			},
-			// ISO 时间 → yyyy-MM-dd HH:mm（截断到秒）
-			fmtTime(iso: string): string {
-				if (iso.length == 0) {
-					return ''
-				}
-				// 2026-08-29T15:14:13.639+08:00 → 2026-08-29 15:14:13
-				let t = iso.replace('T', ' ')
-				const dot = t.indexOf('.')
-				if (dot > 0) {
-					t = t.substring(0, dot)
-				}
-				return t
-			},
-			// 无移动端 schema 的流程：实例 formData（f_ 去前缀双写）铺键值列表
-			buildFallbackRows(inst: UTSJSONObject) {
-				this.fallbackRows = [] as UTSJSONObject[]
-				const fd = inst.getJSON('formData')
-				if (fd == null) {
-					return
-				}
-				fd!.toMap().forEach((value, key) => {
-					if (key.startsWith('f_')) {
-						return
-					}
-					this.fallbackRows.push({
-						label: key,
-						value: this.$strUtil.anyToStr(value)
-					} as UTSJSONObject)
-				})
-			},
-			doExecute(submitType: number, taskName: string = '') {
-				if (this.submitting) {
-					return
-				}
-				// 审批意见必填（对齐 vben tf_approvalComment rules=required，全部按钮生效）
-				if ((this.comment ?? '').length == 0) {
-					uni.showToast({ title: '请填写审批意见', icon: 'none' })
-					return
-				}
-				// 指派/抄送勾选后必须选人（对齐 vben selectRequired）
-				if (this.isAssignNext && !this.isCountersign && this.nextNodeIds.length == 0) {
-					uni.showToast({ title: '请选择下一节点处理人', icon: 'none' })
-					return
-				}
-				if (this.isCc && this.ccIds.length == 0) {
-					uni.showToast({ title: '请选择抄送人', icon: 'none' })
-					return
-				}
-				this.submitting = true
-				uni.showLoading({ title: '提交中……', mask: true })
-				const param = {
-					processTaskId: this.taskId,
-					submitType: submitType,
-					tf_approvalComment: this.comment ?? ''
-				} as UTSJSONObject
-				// 审批附件（vben tf_approvalAttachment，fileInfoId 逗号串，引擎 FlowConst 同键）
-				if (this.approvalFileIds.length > 0) {
-					param['tf_approvalAttachment'] = this.approvalFileIds
-				}
-				// 指定下一节点处理人 / 抄送（引擎对数组与逗号串双兼容）；跳转(4)剔除指派（对齐 vben）
-				if (submitType != 4 && !this.isCountersign && this.isAssignNext) {
-					param['tf_isAssignNextNodeOperator'] = true
-					param['tf_nextNodeOperator'] = this.nextNodeIds
-				}
-				if (this.isCc) {
-					param['tf_isCc'] = true
-					param['tf_ccActors'] = this.ccIds
-				}
-				// 首节点重新提交：业务字段带 f_ 前缀重交 + 发起附加映射 tf_（对齐 vben detail.vue onConfirm）
-				if (submitType == 0) {
-					const biz = withProcessFormPrefix(this.collectBusinessFormData())
-					biz.toMap().forEach((value, key) => {
-						param[key] = value
-					})
-					const nno = this.formData.get('f_nextNodeOperator')
-					if (nno != null) {
-						param['tf_nextNodeOperator'] = nno!
-					}
-					const cca = this.formData.get('f_ccActors')
-					if (cca != null) {
-						param['tf_ccActors'] = cca!
-					}
-				}
-				if (submitType == 4 && taskName.length > 0) {
-					param['taskName'] = taskName
-				}
-				processTaskExecute(param).then((_res) => {
-					uni.hideLoading()
-					uni.showToast({ title: '办理成功', icon: 'success' })
-					uni.setStorageSync('pages:approval:approval:refresh', true)
-					setTimeout(() => {
-						uni.navigateBack()
-					}, 800)
-				}).catch((err) => {
-					uni.hideLoading()
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				}).finally(() => {
-					this.submitting = false
-				})
-			},
-			// 业务 schema 字段当前值（只取 schemaFields 声明过的字段，不把 u_*/历史 tf_ 变量带回）
-			collectBusinessFormData(): UTSJSONObject {
-				const out = {} as UTSJSONObject
-				for (let i = 0; i < this.schemaFields.length; i++) {
-					const f = this.schemaFields[i].field
-					const v = this.formData.get(f)
-					if (v != null) {
-						out[f] = v!
-					}
-				}
-				return out
-			},
-			onMoreActions() {
-				const self = this
-				uni.showActionSheet({
-					title: '更多操作',
-					itemList: ['退回上一步', '退回发起人', '跳转到指定节点'],
-					success: (res: ShowActionSheetSuccess) => {
-						if (res.tapIndex == null) return
-						const idx = parseInt(res.tapIndex.toString())
-						if (idx == 0) {
-							self.doExecute(3)
-						} else if (idx == 1) {
-							self.doExecute(6)
-						} else if (idx == 2) {
-							self.onJumpNode()
-						}
-					}
-				})
-			},
-			// 跳转到已完成节点（submitType=4 + taskName），对齐 vben select-jumb-node
-			onJumpNode() {
-				const self = this
-				if (self.processInstanceId.length == 0) {
-					return
-				}
-				uni.showLoading({ title: '加载中', mask: true })
-				processTaskJumpAbleTaskNameList({
-					processInstanceId: self.processInstanceId
-				} as UTSJSONObject).then((res) => {
-					uni.hideLoading()
-					const rows = res as UTSJSONObject[]
-					if (rows == null || rows.length == 0) {
-						uni.showToast({ title: '暂无可跳转节点', icon: 'none' })
-						return
-					}
-					const labels: string[] = []
-					const values: string[] = []
-					for (let i = 0; i < rows.length; i++) {
-						labels.push(rows[i].getString('label') ?? '')
-						values.push(rows[i].getString('value') ?? '')
-					}
-					uni.showActionSheet({
-						title: '跳转到节点',
-						itemList: labels,
-						success: (r2: ShowActionSheetSuccess) => {
-							if (r2.tapIndex == null) return
-							const j = parseInt(r2.tapIndex.toString())
-							if (j < 0 || j >= values.length) return
-							const tn = values[j]
-							if (tn.length == 0) return
-							uni.showModal({
-								title: '确认跳转',
-								content: '将流程跳转回「' + labels[j] + '」节点重新办理？',
-								success: (r3: ShowModalSuccess) => {
-									if (r3.confirm) {
-										self.doExecute(4, tn)
-									}
-								}
-							})
-						}
-					})
-				}).catch((err) => {
-					uni.hideLoading()
-					uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
-				})
-			},
-			loadUsers() {
-				// 抄送/加签数据源切 /sys/user/page（对齐 vben UserSelect 抽屉：行含 deptName 供搜索+部门名展示）
-				userPage({
-					pageNum: 1,
-					pageSize: 200
-				} as UTSJSONObject).then((res) => {
-					const resObj = res as UTSJSONObject
-					const rows = resObj != null ? resObj!.getArray<UTSJSONObject>('rows') : null
-					this.users = [] as UTSJSONObject[]
-					if (rows != null) {
-						for (let i = 0; i < rows!.length; i++) {
-							const id = rows![i].getString('id') ?? ''
-							if (id.length == 0) {
-								continue
-							}
-							this.users.push({
-								label: rows![i].getString('realName') ?? id,
-								value: id,
-								desc: rows![i].getString('deptName') ?? ''
-							} as UTSJSONObject)
-						}
-					}
-					// 选人弹层已打开时补选项（用户列表异步晚于弹层）
-					if (this.pickerVisible && this.pickerSource != 'next') {
-						this.pickerOptions = this.users
-					}
-				}).catch((_e) => { })
-			},
-			// ── 审批选项：附件 / 指派下一节点处理人 / 抄送 / 会签加签 ──
-			checkStyle(on: boolean): string {
-				return on ? 'background-color:#2563EB;border-color:#2563EB;' : ''
-			},
-			toggleAssign() {
-				this.isAssignNext = !this.isAssignNext
-			},
-			toggleCc() {
-				this.isCc = !this.isCc
-			},
-			onChooseApprovalFile() {
-				uni.chooseImage({
-					count: 1,
-					success: (res) => {
-						const paths = res.tempFilePaths
-						if (paths == null || paths.length == 0) {
-							return
-						}
-						uni.showLoading({
-							title: '上传中……',
-							mask: true
-						})
-						uploadFile(paths[0]).then((data) => {
-							uni.hideLoading()
-							const fileInfoId = data.getString('fileInfoId') ?? ''
-							const url = data.getString('url') ?? ''
-							if (fileInfoId.length > 0) {
-								// 记录文件名用于回显（取 url 最后一段），契约同 m-schema-form upload
-								let name = url
-								const idx = url.lastIndexOf('/')
-								if (idx >= 0 && idx < url.length - 1) {
-									name = url.substring(idx + 1)
-								}
-								this.approvalFileIds = this.approvalFileIds.length > 0 ? this.approvalFileIds + ',' + fileInfoId : fileInfoId
-								this.approvalFileNames.push(name)
-							}
-						}).catch((err) => {
-							uni.hideLoading()
-							uni.showToast({
-								title: this.$strUtil.anyToStr(err),
-								icon: 'none'
-							})
-						})
-					}
-				} as ChooseImageOptions)
-			},
-			// 下一节点候选人（candidatePage，realName/id，对齐 vben UserSelect 数据源）
-			loadCandidates() {
-				processTaskCandidatePage({
-					processTaskId: this.taskId,
-					pageNum: 1,
-					pageSize: 200
-				} as UTSJSONObject).then((res) => {
-					const resObj = res as UTSJSONObject
-					const rows = resObj != null ? resObj.getArray<UTSJSONObject>('rows') : null
-					const opts: UTSJSONObject[] = []
-					if (rows != null) {
-						for (let i = 0; i < rows!.length; i++) {
-							const id = rows![i].getString('id') ?? ''
-							if (id.length == 0) {
-								continue
-							}
-							opts.push({ label: rows![i].getString('realName') ?? id, value: id } as UTSJSONObject)
-						}
-					}
-					this.candidates = opts
-					if (this.pickerVisible && this.pickerSource == 'next') {
-						this.pickerOptions = this.candidates
-					}
-				}).catch((_e) => {
-					// 候选接口异常：选项留空，弹层内提示暂无可选
-				})
-			},
-			// id 集合 → label 逗号串（options 为候选/用户 {label,value}）
-			namesOf(options: UTSJSONObject[], ids: string[]): string {
-				const names: string[] = []
-				for (let i = 0; i < ids.length; i++) {
-					for (let j = 0; j < options.length; j++) {
-						if ((options[j].getString('value') ?? '') == ids[i]) {
-							names.push(options[j].getString('label') ?? ids[i])
-							break
-						}
-					}
-				}
-				return names.join('、')
-			},
-			openPicker(source: string) {
-				this.pickerSource = source
-				if (source == 'next') {
-					if (this.candidates.length == 0) {
-						this.loadCandidates()
-					}
-					this.pickerTitle = '选择下一节点处理人'
-					this.pickerOptions = this.candidates
-					this.pickerSelected = this.nextNodeIds
-					this.pickerMultiple = true
-				} else if (source == 'cc') {
-					if (this.users.length == 0) {
-						this.loadUsers()
-					}
-					this.pickerTitle = '选择抄送人'
-					this.pickerOptions = this.users
-					this.pickerSelected = this.ccIds
-					this.pickerMultiple = true
-				} else {
-					// 会签加签：多选（对齐 vben select-user ApiSelect multiple）
-					if (this.users.length == 0) {
-						this.loadUsers()
-					}
-					this.pickerTitle = '加签给'
-					this.pickerOptions = this.users
-					this.pickerSelected = [] as string[]
-					this.pickerMultiple = true
-				}
-				this.pickerVisible = true
-			},
-			onPickerOk(vals: string[]) {
-				if (this.pickerSource == 'next') {
-					this.nextNodeIds = vals
-				} else if (this.pickerSource == 'cc') {
-					this.ccIds = vals
-				} else if (this.pickerSource == 'sign') {
-					if (vals.length == 0) {
-						return
-					}
-					if (this.submitting) {
-						return
-					}
-					// 加签直接提交（引擎 toStringList 数组/逗号串双兼容）
-					this.submitting = true
-					uni.showLoading({ title: '加签中……', mask: true })
-					processTaskAddCandidate({
-						processTaskId: this.taskId,
-						processInstanceId: this.processInstanceId,
-						actorIds: vals
-					} as UTSJSONObject).then((_r) => {
-						uni.hideLoading()
-						uni.showToast({ title: '加签成功', icon: 'success' })
-					}).catch((err) => {
-						uni.hideLoading()
-						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-					}).finally(() => {
-						this.submitting = false
-					})
-				}
-			},
-			onAddSign() {
-				if (this.users.length == 0) {
-					uni.showToast({ title: '用户列表加载中，请稍后', icon: 'none' })
-					this.loadUsers()
-					return
-				}
-				this.openPicker('sign')
+			fallbackRows.value.push({
+				label: key,
+				value: $strUtil.anyToStr(value)
+			} as UTSJSONObject)
+		})
+	}
+
+	async function loadAll(): Promise<void> {
+		if (taskId.value.length == 0) {
+			return
+		}
+		uni.showLoading({ title: '加载中', mask: true })
+		try {
+			// 1. 任务详情（整页门控；返回即渲染，后续模块渐进加载）
+			const res = await processTaskDetail(taskId.value)
+			uni.hideLoading()
+			const task = res as UTSJSONObject
+			taskDisplayName.value = task.getString('displayName') ?? ''
+			processInstanceId.value = task.getString('processInstanceId') ?? ''
+			executable.value = task.getBoolean('executable') == true
+			formKey.value = task.getString('formKey') ?? ''
+			performType.value = task.getNumber('performType') ?? 0
+			const ext = task.getJSON('ext')
+			if (ext != null) {
+				isFirstTaskNode.value = ext!.getBoolean('isFirstTaskNode') == true
 			}
+			// taskModel.form（节点表单 key）优先于任务 formKey
+			const taskModel = task.getJSON('taskModel')
+			if (taskModel != null) {
+				const nodeForm = taskModel!.getString('form') ?? ''
+				if (nodeForm.length > 0) {
+					formKey.value = nodeForm
+				}
+			}
+			if (processInstanceId.value.length == 0) {
+				return
+			}
+			// 3/4. 流程图高亮 · 审批记录：与实例详情并行，独立渲染、失败不阻断
+			processInstanceHighLight(processInstanceId.value).then((hl) => {
+				highLight.value = hl as UTSJSONObject
+			}).catch((_e) => {
+				// 高亮失败：流程图降级为无高亮渲染
+			})
+			processInstanceApprovalRecord(processInstanceId.value).then((res3) => {
+				const rows = res3 as UTSJSONObject[]
+				if (rows != null) {
+					records.value = rows
+				}
+			}).catch((_e) => {
+				// 记录失败：时间线保持空态
+			}).finally(() => {
+				recordsLoading.value = false
+			})
+			// 2. 实例详情（formData + 流程名）
+			const res2 = await processInstanceDetail(processInstanceId.value)
+			const inst = res2 as UTSJSONObject
+			instanceDisplayName.value = inst.getString('displayName') ?? ''
+			instanceCreateTime.value = fmtTime(inst.getString('createTime') ?? '')
+			// formData：引擎存 f_camel；动态 schema 字段为 camel，hydrate 后回显
+			const fd = inst.getJSON('formData')
+			if (fd != null) {
+				formData.value = fd!
+			}
+			// 局部 graphJson 避免与上方 graph ref 同名遮蔽（原选项式里是 this.graph 与局部 graph 分居两 scope）
+			const graphJson = inst.getJSON('jsonObject')
+			if (graphJson != null) {
+				graph.value = graphJson!
+			}
+			// 对齐 vben：只按 instanceUrl/formKey；SchemaWfForm → __schema__/getByTableName(name)
+			if (formKey.value.length == 0 && graphJson != null) {
+				formKey.value = graphJson!.getString('instanceUrl') ?? ''
+			}
+			const defineName = inst.getString('name') ?? (graphJson != null ? (graphJson!.getString('name') ?? '') : '')
+			const formUrl = formKey.value.length > 0
+				? formKey.value
+				: (graphJson != null ? (graphJson!.getString('instanceUrl') ?? '') : '')
+			if (isSchemaWfForm(formUrl)) {
+				if (graphJson != null) {
+					const embedded = schemaFromGraph(graphJson!)
+					if (embedded != null) {
+						schemaFields.value = embedded!
+					} else if (defineName.length > 0) {
+						try {
+							const modelRes = await schemaGetByTableName(defineName)
+							const tfields = schemaFromTableModel(modelRes as UTSJSONObject)
+							if (tfields != null) {
+								schemaFields.value = tfields!
+							}
+						} catch (_e) {
+							// ignore
+						}
+					}
+				}
+				if (schemaFields.value.length == 0) {
+					uni.showToast({ title: 'SchemaWfForm 元数据表单加载失败', icon: 'none' })
+				}
+			} else {
+				const named = resolveFormSchema(formUrl)
+				if (named != null) {
+					schemaFields.value = named!.fields
+				} else if (formUrl.length > 0) {
+					uni.showToast({ title: '未注册表单组件: ' + formUrl, icon: 'none' })
+				}
+			}
+			// 节点字段权限（对齐 vben：enableFieldPerm → taskModel.ext 的 PERMISSION_<fieldId>）
+			if (graphJson != null && graphJson!.getBoolean('enableFieldPerm') == true && task.getJSON('taskModel') != null) {
+				applyFieldPermissions(schemaFields.value, task.getJSON('taskModel')!.getJSON('ext'))
+			}
+			if (schemaFields.value.length > 0) {
+				hydrateSchemaFormData(formData.value, schemaFields.value)
+			} else {
+				buildFallbackRows(inst)
+			}
+			// 流程级发起附加字段回显：有值的必显；首节点待办可编辑时全量显示
+			const extras = buildInitiatorExtraFields(graphJson, schemaFields.value)
+			const showExtras: SchemaField[] = []
+			for (let i = 0; i < extras.length; i++) {
+				const ef = extras[i]
+				if (formData.value.get(ef.field) != null || (executable.value && isFirstTaskNode.value)) {
+					showExtras.push(ef)
+				}
+			}
+			extraFields.value = showExtras
+		} catch (err) {
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		} finally {
+			uni.hideLoading()
 		}
 	}
+
+	// 业务 schema 字段当前值（只取 schemaFields 声明过的字段，不把 u_*/历史 tf_ 变量带回）
+	function collectBusinessFormData(): UTSJSONObject {
+		const out = {} as UTSJSONObject
+		for (let i = 0; i < schemaFields.value.length; i++) {
+			const f = schemaFields.value[i].field
+			const v = formData.value.get(f)
+			if (v != null) {
+				out[f] = v!
+			}
+		}
+		return out
+	}
+
+	function doExecute(submitType: number, taskName: string = ''): void {
+		if (submitting.value) {
+			return
+		}
+		// 审批意见必填（对齐 vben tf_approvalComment rules=required，全部按钮生效）
+		if ((comment.value ?? '').length == 0) {
+			uni.showToast({ title: '请填写审批意见', icon: 'none' })
+			return
+		}
+		// 指派/抄送勾选后必须选人（对齐 vben selectRequired）
+		if (isAssignNext.value && !isCountersign.value && nextNodeIds.value.length == 0) {
+			uni.showToast({ title: '请选择下一节点处理人', icon: 'none' })
+			return
+		}
+		if (isCc.value && ccIds.value.length == 0) {
+			uni.showToast({ title: '请选择抄送人', icon: 'none' })
+			return
+		}
+		submitting.value = true
+		uni.showLoading({ title: '提交中……', mask: true })
+		const param = {
+			processTaskId: taskId.value,
+			submitType: submitType,
+			tf_approvalComment: comment.value ?? ''
+		} as UTSJSONObject
+		// 审批附件（vben tf_approvalAttachment，fileInfoId 逗号串，引擎 FlowConst 同键）
+		if (approvalFileIds.value.length > 0) {
+			param['tf_approvalAttachment'] = approvalFileIds.value
+		}
+		// 指定下一节点处理人 / 抄送（引擎对数组与逗号串双兼容）；跳转(4)剔除指派（对齐 vben）
+		if (submitType != 4 && !isCountersign.value && isAssignNext.value) {
+			param['tf_isAssignNextNodeOperator'] = true
+			param['tf_nextNodeOperator'] = nextNodeIds.value
+		}
+		if (isCc.value) {
+			param['tf_isCc'] = true
+			param['tf_ccActors'] = ccIds.value
+		}
+		// 首节点重新提交：业务字段带 f_ 前缀重交 + 发起附加映射 tf_（对齐 vben detail.vue onConfirm）
+		if (submitType == 0) {
+			const biz = withProcessFormPrefix(collectBusinessFormData())
+			biz.toMap().forEach((value, key) => {
+				param[key] = value
+			})
+			const nno = formData.value.get('f_nextNodeOperator')
+			if (nno != null) {
+				param['tf_nextNodeOperator'] = nno!
+			}
+			const cca = formData.value.get('f_ccActors')
+			if (cca != null) {
+				param['tf_ccActors'] = cca!
+			}
+		}
+		if (submitType == 4 && taskName.length > 0) {
+			param['taskName'] = taskName
+		}
+		processTaskExecute(param).then((_res) => {
+			uni.hideLoading()
+			uni.showToast({ title: '办理成功', icon: 'success' })
+			uni.setStorageSync('pages:approval:approval:refresh', true)
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 800)
+		}).catch((err) => {
+			uni.hideLoading()
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		}).finally(() => {
+			submitting.value = false
+		})
+	}
+
+	// 跳转到已完成节点（submitType=4 + taskName），对齐 vben select-jumb-node
+	function onJumpNode(): void {
+		if (processInstanceId.value.length == 0) {
+			return
+		}
+		uni.showLoading({ title: '加载中', mask: true })
+		processTaskJumpAbleTaskNameList({
+			processInstanceId: processInstanceId.value
+		} as UTSJSONObject).then((res) => {
+			uni.hideLoading()
+			const rows = res as UTSJSONObject[]
+			if (rows == null || rows.length == 0) {
+				uni.showToast({ title: '暂无可跳转节点', icon: 'none' })
+				return
+			}
+			const labels: string[] = []
+			const values: string[] = []
+			for (let i = 0; i < rows.length; i++) {
+				labels.push(rows[i].getString('label') ?? '')
+				values.push(rows[i].getString('value') ?? '')
+			}
+			uni.showActionSheet({
+				title: '跳转到节点',
+				itemList: labels,
+				success: (r2: ShowActionSheetSuccess) => {
+					if (r2.tapIndex == null) return
+					const j = parseInt(r2.tapIndex.toString())
+					if (j < 0 || j >= values.length) return
+					const tn = values[j]
+					if (tn.length == 0) return
+					uni.showModal({
+						title: '确认跳转',
+						content: '将流程跳转回「' + labels[j] + '」节点重新办理？',
+						success: (r3: ShowModalSuccess) => {
+							if (r3.confirm) {
+								doExecute(4, tn)
+							}
+						}
+					})
+				}
+			})
+		}).catch((err) => {
+			uni.hideLoading()
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		})
+	}
+
+	// id 集合 → label 逗号串（options 为候选/用户 {label,value}）
+	function namesOf(options: UTSJSONObject[], ids: string[]): string {
+		const names: string[] = []
+		for (let i = 0; i < ids.length; i++) {
+			for (let j = 0; j < options.length; j++) {
+				if ((options[j].getString('value') ?? '') == ids[i]) {
+					names.push(options[j].getString('label') ?? ids[i])
+					break
+				}
+			}
+		}
+		return names.join('、')
+	}
+
+	const nextNodeNames = computed((): string => {
+		return namesOf(candidates.value, nextNodeIds.value)
+	})
+	const ccNames = computed((): string => {
+		return namesOf(users.value, ccIds.value)
+	})
+
+	function onMoreActions(): void {
+		uni.showActionSheet({
+			title: '更多操作',
+			itemList: ['退回上一步', '退回发起人', '跳转到指定节点'],
+			success: (res: ShowActionSheetSuccess) => {
+				if (res.tapIndex == null) return
+				const idx = parseInt(res.tapIndex.toString())
+				if (idx == 0) {
+					doExecute(3)
+				} else if (idx == 1) {
+					doExecute(6)
+				} else if (idx == 2) {
+					onJumpNode()
+				}
+			}
+		})
+	}
+
+	function loadUsers(): void {
+		// 抄送/加签数据源切 /sys/user/page（对齐 vben UserSelect 抽屉：行含 deptName 供搜索+部门名展示）
+		userPage({
+			pageNum: 1,
+			pageSize: 200
+		} as UTSJSONObject).then((res) => {
+			const resObj = res as UTSJSONObject
+			const rows = resObj != null ? resObj!.getArray<UTSJSONObject>('rows') : null
+			users.value = [] as UTSJSONObject[]
+			if (rows != null) {
+				for (let i = 0; i < rows!.length; i++) {
+					const id = rows![i].getString('id') ?? ''
+					if (id.length == 0) {
+						continue
+					}
+					users.value.push({
+						label: rows![i].getString('realName') ?? id,
+						value: id,
+						desc: rows![i].getString('deptName') ?? ''
+					} as UTSJSONObject)
+				}
+			}
+			// 选人弹层已打开时补选项（用户列表异步晚于弹层）
+			if (pickerVisible.value && pickerSource.value != 'next') {
+				pickerOptions.value = users.value
+			}
+		}).catch((_e) => { })
+	}
+
+	// ── 审批选项：附件 / 指派下一节点处理人 / 抄送 / 会签加签 ──
+	function checkStyle(on: boolean): string {
+		return on ? 'background-color:#2563EB;border-color:#2563EB;' : ''
+	}
+
+	function toggleAssign(): void {
+		isAssignNext.value = !isAssignNext.value
+	}
+
+	function toggleCc(): void {
+		isCc.value = !isCc.value
+	}
+
+	function onChooseApprovalFile(): void {
+		uni.chooseImage({
+			count: 1,
+			success: (res) => {
+				const paths = res.tempFilePaths
+				if (paths == null || paths.length == 0) {
+					return
+				}
+				uni.showLoading({
+					title: '上传中……',
+					mask: true
+				})
+				uploadFile(paths[0]).then((data) => {
+					uni.hideLoading()
+					const fileInfoId = data.getString('fileInfoId') ?? ''
+					const url = data.getString('url') ?? ''
+					if (fileInfoId.length > 0) {
+						// 记录文件名用于回显（取 url 最后一段），契约同 m-schema-form upload
+						let name = url
+						const idx = url.lastIndexOf('/')
+						if (idx >= 0 && idx < url.length - 1) {
+							name = url.substring(idx + 1)
+						}
+						approvalFileIds.value = approvalFileIds.value.length > 0 ? approvalFileIds.value + ',' + fileInfoId : fileInfoId
+						approvalFileNames.value.push(name)
+					}
+				}).catch((err) => {
+					uni.hideLoading()
+					uni.showToast({
+						title: $strUtil.anyToStr(err),
+						icon: 'none'
+					})
+				})
+			}
+		} as ChooseImageOptions)
+	}
+
+	// 下一节点候选人（candidatePage，realName/id，对齐 vben UserSelect 数据源）
+	function loadCandidates(): void {
+		processTaskCandidatePage({
+			processTaskId: taskId.value,
+			pageNum: 1,
+			pageSize: 200
+		} as UTSJSONObject).then((res) => {
+			const resObj = res as UTSJSONObject
+			const rows = resObj != null ? resObj.getArray<UTSJSONObject>('rows') : null
+			const opts: UTSJSONObject[] = []
+			if (rows != null) {
+				for (let i = 0; i < rows!.length; i++) {
+					const id = rows![i].getString('id') ?? ''
+					if (id.length == 0) {
+						continue
+					}
+					opts.push({ label: rows![i].getString('realName') ?? id, value: id } as UTSJSONObject)
+				}
+			}
+			candidates.value = opts
+			if (pickerVisible.value && pickerSource.value == 'next') {
+				pickerOptions.value = candidates.value
+			}
+		}).catch((_e) => {
+			// 候选接口异常：选项留空，弹层内提示暂无可选
+		})
+	}
+
+	function openPicker(source: string): void {
+		pickerSource.value = source
+		if (source == 'next') {
+			if (candidates.value.length == 0) {
+				loadCandidates()
+			}
+			pickerTitle.value = '选择下一节点处理人'
+			pickerOptions.value = candidates.value
+			pickerSelected.value = nextNodeIds.value
+			pickerMultiple.value = true
+		} else if (source == 'cc') {
+			if (users.value.length == 0) {
+				loadUsers()
+			}
+			pickerTitle.value = '选择抄送人'
+			pickerOptions.value = users.value
+			pickerSelected.value = ccIds.value
+			pickerMultiple.value = true
+		} else {
+			// 会签加签：多选（对齐 vben select-user ApiSelect multiple）
+			if (users.value.length == 0) {
+				loadUsers()
+			}
+			pickerTitle.value = '加签给'
+			pickerOptions.value = users.value
+			pickerSelected.value = [] as string[]
+			pickerMultiple.value = true
+		}
+		pickerVisible.value = true
+	}
+
+	function onPickerOk(vals: string[]): void {
+		if (pickerSource.value == 'next') {
+			nextNodeIds.value = vals
+		} else if (pickerSource.value == 'cc') {
+			ccIds.value = vals
+		} else if (pickerSource.value == 'sign') {
+			if (vals.length == 0) {
+				return
+			}
+			if (submitting.value) {
+				return
+			}
+			// 加签直接提交（引擎 toStringList 数组/逗号串双兼容）
+			submitting.value = true
+			uni.showLoading({ title: '加签中……', mask: true })
+			processTaskAddCandidate({
+				processTaskId: taskId.value,
+				processInstanceId: processInstanceId.value,
+				actorIds: vals
+			} as UTSJSONObject).then((_r) => {
+				uni.hideLoading()
+				uni.showToast({ title: '加签成功', icon: 'success' })
+			}).catch((err) => {
+				uni.hideLoading()
+				uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+			}).finally(() => {
+				submitting.value = false
+			})
+		}
+	}
+
+	function onAddSign(): void {
+		if (users.value.length == 0) {
+			uni.showToast({ title: '用户列表加载中，请稍后', icon: 'none' })
+			loadUsers()
+			return
+		}
+		openPicker('sign')
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		taskId.value = options['taskId'] ?? ''
+		loadAll()
+		loadUsers()
+	})
 </script>
 <style lang="less">
 	// 蒸汽模式压平：仅简单 class 选择器；首按钮去边距 / check 内 label 边距 / 更多按钮深色字均改模板内联 style

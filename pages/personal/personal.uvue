@@ -27,146 +27,148 @@
 	<!-- #endif -->
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { ListTitleType, mListTitle } from '@/components/m-list-title'
 	import { logout, userinfo } from '@/api/user.uts'
 	import { cleanCache } from '@/util/cache_util.uts';
 	import { IS_DEV } from '@/util/const.uts';
 	import { showApiSwitchSheet } from '@/util/api_switch.uts'
-	export default {
-		components: {
-			mListTitle
-		},
-		data() {
-			return {
-				listTitleData: [{
-					key: "message",
-					icon: 'chatboxes',
-					title: '消息',
-					iconColor: '#3B82F6'
-				},{
-					key: "password",
-					icon: 'locked',
-					title: '修改密码',
-					iconColor: '#F59E0B'
-				},{
-					key: "surrogate",
-					icon: 'staff',
-					title: '委托代理',
-					iconColor: '#8B5CF6'
-				},{
-					key: "baseurl",
-					icon: 'link',
-					title: '切换接口地址',
-					iconColor: '#2563EB'
-				},{
-					key: "about",
-					icon: 'info',
-					title: '关于',
-					iconColor: '#16A34A'
-				},{
-					key: "logout",
-					icon: 'undo',
-					title: '退出登录',
-					iconColor: 'red'
-				}] as ListTitleType[]
-			};
-		},
-		computed: {
-			userData: (): UTSJSONObject => {
-				return this.$store.getUser();
-			},
-			// production 正式包不出「切换接口地址」（锁定 pro），development 保留十三栈档位
-			menuItems: (): ListTitleType[] => {
-				if (IS_DEV) {
-					return this.listTitleData
-				}
-				return this.listTitleData.filter((item: ListTitleType): boolean => item.key != 'baseurl')
-			},
-			displayName: (): string => {
-				const user = this.$store.getUser()
-				const realName = user.getString('realName')
-				if (realName != null && realName.length > 0) {
-					return realName
-				}
-				const userName = user.getString('userName')
-				if (userName != null && userName.length > 0) {
-					return userName
-				}
-				return '未登录'
+	import { $store } from '@/store/index'
+	import { $strUtil } from '@/util/str_util'
+	import { responseInterceptor } from '@/util/http.uts'
+
+	const listTitleData = ref<ListTitleType[]>([{
+		key: "message",
+		icon: 'chatboxes',
+		title: '消息',
+		iconColor: '#3B82F6'
+	},{
+		key: "password",
+		icon: 'locked',
+		title: '修改密码',
+		iconColor: '#F59E0B'
+	},{
+		key: "surrogate",
+		icon: 'staff',
+		title: '委托代理',
+		iconColor: '#8B5CF6'
+	},{
+		key: "baseurl",
+		icon: 'link',
+		title: '切换接口地址',
+		iconColor: '#2563EB'
+	},{
+		key: "about",
+		icon: 'info',
+		title: '关于',
+		iconColor: '#16A34A'
+	},{
+		key: "logout",
+		icon: 'undo',
+		title: '退出登录',
+		iconColor: 'red'
+	}])
+
+	const userData = computed((): UTSJSONObject => {
+		return $store.getUser()
+	})
+
+	// production 正式包不出「切换接口地址」（锁定 pro），development 保留十三栈档位
+	const menuItems = computed((): ListTitleType[] => {
+		if (IS_DEV) {
+			return listTitleData.value
+		}
+		return listTitleData.value.filter((item: ListTitleType): boolean => item.key != 'baseurl')
+	})
+
+	const displayName = computed((): string => {
+		const user = $store.getUser()
+		const realName = user.getString('realName')
+		if (realName != null && realName.length > 0) {
+			return realName
+		}
+		const userName = user.getString('userName')
+		if (userName != null && userName.length > 0) {
+			return userName
+		}
+		return '未登录'
+	})
+
+	async function loadUserInfo() {
+		try {
+			const res = await userinfo()
+			if (responseInterceptor(res)) {
+				const data = res as UTSJSONObject
+				$store.setUser(data)
 			}
-		},
-		onShow() {
-			this.loadUserInfo()
-		},
-		methods: {
-			async loadUserInfo() {
-				try {
-					const res = await userinfo()
-					if (this.$responseInterceptor(res)) {
-						const data = res as UTSJSONObject
-						this.$store.setUser(data)
-					}
-				} catch (err) {
-					console.error(err)
-				}
-			},
-			// 与登录页长按 logo / 全局摇一摇共用同一 ActionSheet（util/api_switch.uts）
-			onChangeApiUrl() {
-				showApiSwitchSheet()
-			},
-			onAbout() {
-				uni.showModal({
-					title: '关于',
-					content: 'jeeflow 移动审批\njeeflow 工作流系列管理系统移动端\n现联调：pro 线上 jeeflow-pro.mldong.com\n演示账号 admin / 123456',
-					showCancel: false
-				})
-			},
-			doLogout() {
-				cleanCache();
-				this.$store.resetAuth()
-				uni.reLaunch({
-					url: '/pages/login/login'
-				})
-			},
-			onLogout() {
-				uni.showModal({
-					title: '退出登录',
-					content: '确定退出当前账号？',
-					success: (ee: ShowModalSuccess) => {
-						if (!ee.confirm) return
-						logout().then(() => {
-							this.doLogout()
-						}).catch(() => {
-							this.doLogout()
-						})
-					}
-				})
-			},
-			onItemTap(item: ListTitleType) {
-				if (item.key == 'message') {
-					uni.navigateTo({
-						url: '/pages/message/message'
-					})
-				} else if (item.key == 'password') {
-					uni.showToast({
-						title: 'M1 开放：修改密码',
-						position: 'bottom'
-					})
-				} else if (item.key == "surrogate") {
-					uni.navigateTo({
-						url: '/pages/personal/surrogate'
-					})
-				} else if (item.key == 'baseurl') {
-					this.onChangeApiUrl()
-				} else if (item.key == 'about') {
-					this.onAbout()
-				} else if (item.key == "logout") {
-					this.onLogout()
-				}
-			}
+		} catch (err) {
+			console.error(err)
 		}
 	}
+
+	// 与登录页长按 logo / 全局摇一摇共用同一 ActionSheet（util/api_switch.uts）
+	function onChangeApiUrl() {
+		showApiSwitchSheet()
+	}
+
+	function onAbout() {
+		uni.showModal({
+			title: '关于',
+			content: 'jeeflow 移动审批\njeeflow 工作流系列管理系统移动端\n现联调：pro 线上 jeeflow-pro.mldong.com\n演示账号 admin / 123456',
+			showCancel: false
+		})
+	}
+
+	function doLogout() {
+		cleanCache();
+		$store.resetAuth()
+		uni.reLaunch({
+			url: '/pages/login/login'
+		})
+	}
+
+	function onLogout() {
+		uni.showModal({
+			title: '退出登录',
+			content: '确定退出当前账号？',
+			success: (ee: ShowModalSuccess) => {
+				if (!ee.confirm) return
+				logout().then(() => {
+					doLogout()
+				}).catch(() => {
+					doLogout()
+				})
+			}
+		})
+	}
+
+	function onItemTap(item: ListTitleType) {
+		if (item.key == 'message') {
+			uni.navigateTo({
+				url: '/pages/message/message'
+			})
+		} else if (item.key == 'password') {
+			uni.showToast({
+				title: 'M1 开放：修改密码',
+				position: 'bottom'
+			})
+		} else if (item.key == "surrogate") {
+			uni.navigateTo({
+				url: '/pages/personal/surrogate'
+			})
+		} else if (item.key == 'baseurl') {
+			onChangeApiUrl()
+		} else if (item.key == 'about') {
+			onAbout()
+		} else if (item.key == "logout") {
+			onLogout()
+		}
+	}
+
+	onShow(() => {
+		loadUserInfo()
+	})
 </script>
 
 <style lang="less">

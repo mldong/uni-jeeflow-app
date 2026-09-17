@@ -80,267 +80,277 @@
 		<!-- #endif -->
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
 	import { processTaskTodoList, processTaskDoneList, processInstanceCcList, processInstanceUpdateCCStatus } from '@/api/workflow.uts'
 	import { applyTodoBadge, refreshTabBadges } from '@/util/badge.uts'
 	import { ERR_AUTH_REDIRECT } from '@/util/http.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		data() {
-			return {
-				currentTab: 0,
-				segs: ['待办', '已办', '抄送'],
-				pageNum: 1,
-				pageSize: 10,
-				todoCount: 0,
-				doneCount: 0,
-				ccCount: 0,
-				todoList: [] as UTSJSONObject[],
-				doneList: [] as UTSJSONObject[],
-				ccList: [] as UTSJSONObject[],
-				refresherTriggered: false,
-				loading: false,
-				loaded: [false, false, false],
-				// 各段首屏加载失败标记：true 显示可重试错误态而非「暂无数据」
-				loadFailed: [false, false, false] as boolean[]
-			};
-		},
-	onShow() {
-		const tabRaw = uni.getStorageSync('pages:approval:tab')
-			if (tabRaw != null && tabRaw !== '') {
-				uni.removeStorageSync('pages:approval:tab')
-				const tab = parseInt(tabRaw.toString())
-				if (!isNaN(tab) && tab >= 0 && tab <= 2 && tab != this.currentTab) {
-					this.currentTab = tab
-					this.pageNum = 1
-					this.requestData()
-					return
-				}
-			}
-			const needRefresh = uni.getStorageSync('pages:approval:approval:refresh') == true
-			if (needRefresh) {
-				uni.removeStorageSync('pages:approval:approval:refresh')
-			}
-			// 待办：有刷新标记或未加载过；其余段：未加载过才拉
-			if (needRefresh || !this.loaded[0]) {
-				this.pageNum = 1
-				this.requestData()
-			} else {
-				refreshTabBadges()
-			}
-		},
-		methods: {
-			fmtTime(iso: string): string {
-				if (iso.length == 0) {
-					return ''
-				}
-				let t = iso.replace('T', ' ')
-				const dot = t.indexOf('.')
-				if (dot > 0) {
-					t = t.substring(0, dot)
-				}
-				return t
-			},
-			// 相对时间：今天/昨天显示 HH:mm，今年内显示 MM-DD，跨年显示 yyyy-MM-DD
-			fmtRelTime(raw: string): string {
-				if (raw.length == 0) {
-					return ''
-				}
-				let t = raw.replace('T', ' ')
-				const dot = t.indexOf('.')
-				if (dot > 0) {
-					t = t.substring(0, dot)
-				}
-				// yyyy-MM-dd HH:mm(:ss)?
-				if (t.length < 16) {
-					return t
-				}
-				const now = new Date()
-				const y = parseInt(t.substring(0, 4))
-				const mo = parseInt(t.substring(5, 7))
-				const d = parseInt(t.substring(8, 10))
-				const hh = t.substring(11, 13)
-				const mm = t.substring(14, 16)
-				if (isNaN(y) || isNaN(mo) || isNaN(d)) {
-					return t
-				}
-				const then = new Date(y, mo - 1, d)
-				const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-				const dayMs = 24 * 3600 * 1000
-				const diff = (today0.getTime() - new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime()) / dayMs
-				if (diff == 0) {
-					return '今天 ' + hh + ':' + mm
-				}
-				if (diff == 1) {
-					return '昨天 ' + hh + ':' + mm
-				}
-				if (y == now.getFullYear()) {
-					return t.substring(5, 10)
-				}
-				return t.substring(0, 10)
-			},
-			// 申请人：读引擎存的 u_realName（对齐 vben 发起人列 = instanceExt.u_realName）。
-			// 待办/已办行有 instanceExt；抄送行无，回落本行 ext.u_realName
-			applicantName(item: UTSJSONObject): string {
-				const iext = item.getJSON('instanceExt')
-				if (iext != null) {
-					const rn = iext!.getString('u_realName')
-					if (rn != null && rn.length > 0) {
-						return rn!
-					}
-				}
-				const ext = item.getJSON('ext')
-				if (ext != null) {
-					const rn2 = ext!.getString('u_realName')
-					if (rn2 != null && rn2.length > 0) {
-						return rn2!
-					}
-				}
-				return ''
-			},
-			onSegTap(index: number) {
-				this.currentTab = index
-				if (!this.loaded[index]) {
-					this.pageNum = 1
-					this.requestData()
-				}
-			},
-			handleRefresherrefresh() {
-				this.refresherTriggered = true
-				this.pageNum = 1
-				this.loaded[this.currentTab] = false
-				this.requestData().finally(() => {
-					this.refresherTriggered = false
-				})
-			},
-			loadMore() {
-				if (this.loading) {
-					return
-				}
-				if (this.currentTab == 0 && this.todoList.length < this.todoCount) {
-					this.pageNum++
-					this.requestData()
-				} else if (this.currentTab == 1 && this.doneList.length < this.doneCount) {
-					this.pageNum++
-					this.requestData()
-				} else if (this.currentTab == 2 && this.ccList.length < this.ccCount) {
-					this.pageNum++
-					this.requestData()
-				}
-			},
-			requestData(): Promise<any> {
-				this.loading = true
-				const tab = this.currentTab
-				let api: Promise<any>
-				if (tab == 0) {
-					api = processTaskTodoList(this.pageParam())
-				} else if (tab == 1) {
-					api = processTaskDoneList(this.pageParam())
-				} else {
-					api = processInstanceCcList(this.pageParam())
-				}
-				return new Promise<any>((resolve, reject) => {
-					api.then((res) => {
-						const data = res as UTSJSONObject
-						const count = data.getNumber('recordCount') ?? 0
-						if (tab == 0) {
-							this.todoCount = count
-							applyTodoBadge(count)
-						} else if (tab == 1) {
-							this.doneCount = count
-						} else {
-							this.ccCount = count
-						}
-						if (this.pageNum == 1) {
-							this.clearList(tab)
-							this.loadFailed[tab] = false
-						}
-						const rows = data.getArray('rows')
-						if (rows != null) {
-							for (let i = 0; i < rows.length; i++) {
-								this.appendRow(tab, rows[i] as UTSJSONObject)
-							}
-						}
-						this.loaded[tab] = true
-						resolve(true)
-					}).catch((err) => {
-						const msg = this.$strUtil.anyToStr(err)
-						if (msg == ERR_AUTH_REDIRECT) {
-							// 拦截器已清登录态并跳登录页，这里不再 toast / 兜底
-						} else if (this.pageNum == 1 && this.listSize(tab) == 0) {
-							// 首屏失败：可重试错误态（不再是 toast + 裸空态）
-							this.loadFailed[tab] = true
-						} else {
-							// 翻页/下拉失败且已有数据：toast 即可
-							uni.showToast({ title: msg, icon: 'none' })
-						}
-						reject(err)
-					}).finally(() => {
-						this.loading = false
-					})
-				})
-			},
-			pageParam(): UTSJSONObject {
-				return {
-					pageNum: this.pageNum,
-					pageSize: this.pageSize
-				} as UTSJSONObject
-			},
-			clearList(tab: number) {
-				if (tab == 0) {
-					this.todoList = [] as UTSJSONObject[]
-				} else if (tab == 1) {
-					this.doneList = [] as UTSJSONObject[]
-				} else {
-					this.ccList = [] as UTSJSONObject[]
-				}
-			},
-			appendRow(tab: number, row: UTSJSONObject) {
-				if (tab == 0) {
-					this.todoList.push(row)
-				} else if (tab == 1) {
-					this.doneList.push(row)
-				} else {
-					this.ccList.push(row)
-				}
-			},
-			listSize(tab: number): number {
-				if (tab == 0) {
-					return this.todoList.length
-				} else if (tab == 1) {
-					return this.doneList.length
-				} else {
-					return this.ccList.length
-				}
-			},
-			retryTab() {
-				this.pageNum = 1
-				this.requestData()
-			},
-			onTapTodo(item: UTSJSONObject) {
-				uni.navigateTo({
-					url: '/pages/workflow/task-detail?taskId=' + (item.getString('id') ?? '')
-				})
-			},
-			onTapDone(item: UTSJSONObject) {
-				uni.navigateTo({
-					url: '/pages/workflow/instance-detail?instanceId=' + (item.getString('processInstanceId') ?? '')
-				})
-			},
-			onTapCc(item: UTSJSONObject) {
-				const instanceId = item.getString('processInstanceId') ?? ''
-				// 未读抄送进详情时顺带标记已读（失败不阻塞）
-				if ((item.getNumber('ccStatus') ?? 0) == 1) {
-					processInstanceUpdateCCStatus(instanceId).then((_r) => {
-						item['ccStatus'] = 0
-					}).catch((_e) => { })
-				}
-				uni.navigateTo({
-					url: '/pages/workflow/instance-detail?instanceId=' + instanceId
-				})
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	const currentTab = ref<number>(0)
+	const segs = ref<string[]>(['待办', '已办', '抄送'])
+	const pageNum = ref<number>(1)
+	const pageSize = ref<number>(10)
+	const todoCount = ref<number>(0)
+	const doneCount = ref<number>(0)
+	const ccCount = ref<number>(0)
+	const todoList = ref<UTSJSONObject[]>([])
+	const doneList = ref<UTSJSONObject[]>([])
+	const ccList = ref<UTSJSONObject[]>([])
+	const refresherTriggered = ref(false)
+	const loading = ref(false)
+	const loaded = ref<boolean[]>([false, false, false])
+	// 各段首屏加载失败标记：true 显示可重试错误态而非「暂无数据」
+	const loadFailed = ref<boolean[]>([false, false, false])
+
+	function fmtTime(iso: string): string {
+		if (iso.length == 0) {
+			return ''
+		}
+		let t = iso.replace('T', ' ')
+		const dot = t.indexOf('.')
+		if (dot > 0) {
+			t = t.substring(0, dot)
+		}
+		return t
+	}
+
+	// 相对时间：今天/昨天显示 HH:mm，今年内显示 MM-DD，跨年显示 yyyy-MM-DD
+	function fmtRelTime(raw: string): string {
+		if (raw.length == 0) {
+			return ''
+		}
+		let t = raw.replace('T', ' ')
+		const dot = t.indexOf('.')
+		if (dot > 0) {
+			t = t.substring(0, dot)
+		}
+		// yyyy-MM-dd HH:mm(:ss)?
+		if (t.length < 16) {
+			return t
+		}
+		const now = new Date()
+		const y = parseInt(t.substring(0, 4))
+		const mo = parseInt(t.substring(5, 7))
+		const d = parseInt(t.substring(8, 10))
+		const hh = t.substring(11, 13)
+		const mm = t.substring(14, 16)
+		if (isNaN(y) || isNaN(mo) || isNaN(d)) {
+			return t
+		}
+		const then = new Date(y, mo - 1, d)
+		const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+		const dayMs = 24 * 3600 * 1000
+		const diff = (today0.getTime() - new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime()) / dayMs
+		if (diff == 0) {
+			return '今天 ' + hh + ':' + mm
+		}
+		if (diff == 1) {
+			return '昨天 ' + hh + ':' + mm
+		}
+		if (y == now.getFullYear()) {
+			return t.substring(5, 10)
+		}
+		return t.substring(0, 10)
+	}
+
+	// 申请人：读引擎存的 u_realName（对齐 vben 发起人列 = instanceExt.u_realName）。
+	// 待办/已办行有 instanceExt；抄送行无，回落本行 ext.u_realName
+	function applicantName(item: UTSJSONObject): string {
+		const iext = item.getJSON('instanceExt')
+		if (iext != null) {
+			const rn = iext!.getString('u_realName')
+			if (rn != null && rn.length > 0) {
+				return rn!
 			}
 		}
+		const ext = item.getJSON('ext')
+		if (ext != null) {
+			const rn2 = ext!.getString('u_realName')
+			if (rn2 != null && rn2.length > 0) {
+				return rn2!
+			}
+		}
+		return ''
 	}
+
+	function pageParam(): UTSJSONObject {
+		return {
+			pageNum: pageNum.value,
+			pageSize: pageSize.value
+		} as UTSJSONObject
+	}
+
+	function clearList(tab: number): void {
+		if (tab == 0) {
+			todoList.value = [] as UTSJSONObject[]
+		} else if (tab == 1) {
+			doneList.value = [] as UTSJSONObject[]
+		} else {
+			ccList.value = [] as UTSJSONObject[]
+		}
+	}
+
+	function appendRow(tab: number, row: UTSJSONObject): void {
+		if (tab == 0) {
+			todoList.value.push(row)
+		} else if (tab == 1) {
+			doneList.value.push(row)
+		} else {
+			ccList.value.push(row)
+		}
+	}
+
+	function listSize(tab: number): number {
+		if (tab == 0) {
+			return todoList.value.length
+		} else if (tab == 1) {
+			return doneList.value.length
+		} else {
+			return ccList.value.length
+		}
+	}
+
+	function requestData(): Promise<any> {
+		loading.value = true
+		const tab = currentTab.value
+		let api: Promise<any>
+		if (tab == 0) {
+			api = processTaskTodoList(pageParam())
+		} else if (tab == 1) {
+			api = processTaskDoneList(pageParam())
+		} else {
+			api = processInstanceCcList(pageParam())
+		}
+		return new Promise<any>((resolve, reject) => {
+			api.then((res) => {
+				const data = res as UTSJSONObject
+				const count = data.getNumber('recordCount') ?? 0
+				if (tab == 0) {
+					todoCount.value = count
+					applyTodoBadge(count)
+				} else if (tab == 1) {
+					doneCount.value = count
+				} else {
+					ccCount.value = count
+				}
+				if (pageNum.value == 1) {
+					clearList(tab)
+					loadFailed.value[tab] = false
+				}
+				const rows = data.getArray('rows')
+				if (rows != null) {
+					for (let i = 0; i < rows.length; i++) {
+						appendRow(tab, rows[i] as UTSJSONObject)
+					}
+				}
+				loaded.value[tab] = true
+				resolve(true)
+			}).catch((err) => {
+				const msg = $strUtil.anyToStr(err)
+				if (msg == ERR_AUTH_REDIRECT) {
+					// 拦截器已清登录态并跳登录页，这里不再 toast / 兜底
+				} else if (pageNum.value == 1 && listSize(tab) == 0) {
+					// 首屏失败：可重试错误态（不再是 toast + 裸空态）
+					loadFailed.value[tab] = true
+				} else {
+					// 翻页/下拉失败且已有数据：toast 即可
+					uni.showToast({ title: msg, icon: 'none' })
+				}
+				reject(err)
+			}).finally(() => {
+				loading.value = false
+			})
+		})
+	}
+
+	function onSegTap(index: number): void {
+		currentTab.value = index
+		if (!loaded.value[index]) {
+			pageNum.value = 1
+			requestData()
+		}
+	}
+
+	function handleRefresherrefresh(): void {
+		refresherTriggered.value = true
+		pageNum.value = 1
+		loaded.value[currentTab.value] = false
+		requestData().finally(() => {
+			refresherTriggered.value = false
+		})
+	}
+
+	function loadMore(): void {
+		if (loading.value) {
+			return
+		}
+		if (currentTab.value == 0 && todoList.value.length < todoCount.value) {
+			pageNum.value++
+			requestData()
+		} else if (currentTab.value == 1 && doneList.value.length < doneCount.value) {
+			pageNum.value++
+			requestData()
+		} else if (currentTab.value == 2 && ccList.value.length < ccCount.value) {
+			pageNum.value++
+			requestData()
+		}
+	}
+
+	function retryTab(): void {
+		pageNum.value = 1
+		requestData()
+	}
+
+	function onTapTodo(item: UTSJSONObject): void {
+		uni.navigateTo({
+			url: '/pages/workflow/task-detail?taskId=' + (item.getString('id') ?? '')
+		})
+	}
+
+	function onTapDone(item: UTSJSONObject): void {
+		uni.navigateTo({
+			url: '/pages/workflow/instance-detail?instanceId=' + (item.getString('processInstanceId') ?? '')
+		})
+	}
+
+	function onTapCc(item: UTSJSONObject): void {
+		const instanceId = item.getString('processInstanceId') ?? ''
+		// 未读抄送进详情时顺带标记已读（失败不阻塞）
+		if ((item.getNumber('ccStatus') ?? 0) == 1) {
+			processInstanceUpdateCCStatus(instanceId).then((_r) => {
+				item['ccStatus'] = 0
+			}).catch((_e) => { })
+		}
+		uni.navigateTo({
+			url: '/pages/workflow/instance-detail?instanceId=' + instanceId
+		})
+	}
+
+	onShow(() => {
+		const tabRaw = uni.getStorageSync('pages:approval:tab')
+		if (tabRaw != null && tabRaw !== '') {
+			uni.removeStorageSync('pages:approval:tab')
+			const tab = parseInt(tabRaw.toString())
+			if (!isNaN(tab) && tab >= 0 && tab <= 2 && tab != currentTab.value) {
+				currentTab.value = tab
+				pageNum.value = 1
+				requestData()
+				return
+			}
+		}
+		const needRefresh = uni.getStorageSync('pages:approval:approval:refresh') == true
+		if (needRefresh) {
+			uni.removeStorageSync('pages:approval:approval:refresh')
+		}
+		// 待办：有刷新标记或未加载过；其余段：未加载过才拉
+		if (needRefresh || !loaded.value[0]) {
+			pageNum.value = 1
+			requestData()
+		} else {
+			refreshTabBadges()
+		}
+	})
 </script>
 <style lang="less">
 	.m-seg-row {

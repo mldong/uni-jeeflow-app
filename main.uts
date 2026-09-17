@@ -2,10 +2,6 @@ import App from './App.uvue'
 import mNavigationBar from '@/components/m-navigation-bar/index.uvue'
 import { mIcon } from '@/components/m-icon'
 import mEmptyDataUvue from '@/components/m-empty-data/m-empty-data.uvue'
-import { $collUtil } from '@/util/array_util'
-import { $strUtil } from '@/util/str_util'
-import { $store } from '@/store/index'
-import { responseInterceptor } from '@/util/http.uts'
 
 import { createSSRApp } from 'vue'
 
@@ -14,14 +10,6 @@ export function createApp() {
 	app.component('m-navigation-bar', mNavigationBar)
 	app.component('m-icon', mIcon)
 	app.component('m-empty-data', mEmptyDataUvue)
-	// 直接挂到 globalProperties,避免 app.use 在 UTS 编译后丢失 install 字段
-	// 触发 [Vue warn] Plugin is invalid
-	app.config.globalProperties.$collUtil = $collUtil
-	app.config.globalProperties.$strUtil = $strUtil
-	app.config.globalProperties.$store = $store
-	// 响应拦截器挂到 Vue 全局属性,页面里的 this.$responseInterceptor(res) 依赖它
-	// globalProperties 注册函数必须使用直接函数表达式,不支持先声明函数再赋值
-	app.config.globalProperties.$responseInterceptor = (res: any): boolean => responseInterceptor(res)
 	return {
 		app
 	}

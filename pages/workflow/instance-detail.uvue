@@ -67,7 +67,7 @@
 			:multiple="true" @ok="onCcPickerOk"></m-user-picker>
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
 	import mTimeline from '@/components/m-timeline/m-timeline.uvue'
 	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
@@ -76,290 +76,287 @@
 	import { processInstanceDetail, processInstanceHighLight, processInstanceApprovalRecord, processInstanceWithdraw, processInstanceCreateCc } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
 	import { userPage } from '@/api/user.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		components: {
-			mSchemaForm,
-			mTimeline,
-			mFlowNative,
-			mUserPicker
-		},
-		data() {
-			return {
-				instanceId: '',
-				state: 0,
-				displayName: '',
-				createTime: '',
-				operatorName: '',
-				processDefineId: '',
-				schemaFields: [] as SchemaField[],
-				formData: {} as UTSJSONObject,
-				graph: null as UTSJSONObject | null,
-				highLight: null as UTSJSONObject | null,
-				records: [] as UTSJSONObject[],
-				users: [] as UTSJSONObject[],
-				ccPickerVisible: false,
-				loading: false
-			};
-		},
-		computed: {
-			stateText(): string {
-				if (this.state == 10) return '审批中'
-				if (this.state == 20) return '已通过'
-				if (this.state == 30) return '已撤回'
-				if (this.state == 40) return '已中断'
-				if (this.state == 45) return '已拒绝'
-				if (this.state == 50) return '待提交'
-				if (this.state == 99) return '已废弃'
-				return '状态' + this.state.toString()
-			},
-			stateColor(): string {
-				if (this.state == 10) return '#2563EB'
-				if (this.state == 20) return '#16A34A'
-				if (this.state == 30) return '#F59E0B'
-				if (this.state == 45) return '#EF4444'
-				return '#999999'
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	const instanceId = ref('')
+	const state = ref<number>(0)
+	const displayName = ref('')
+	const createTime = ref('')
+	const operatorName = ref('')
+	const processDefineId = ref('')
+	const schemaFields = ref<SchemaField[]>([])
+	const formData = ref<UTSJSONObject>({} as UTSJSONObject)
+	const graph = ref<UTSJSONObject | null>(null)
+	const highLight = ref<UTSJSONObject | null>(null)
+	const records = ref<UTSJSONObject[]>([])
+	const users = ref<UTSJSONObject[]>([])
+	const ccPickerVisible = ref(false)
+	const loading = ref(false)
+
+	const stateText = computed((): string => {
+		if (state.value == 10) return '审批中'
+		if (state.value == 20) return '已通过'
+		if (state.value == 30) return '已撤回'
+		if (state.value == 40) return '已中断'
+		if (state.value == 45) return '已拒绝'
+		if (state.value == 50) return '待提交'
+		if (state.value == 99) return '已废弃'
+		return '状态' + state.value.toString()
+	})
+	const stateColor = computed((): string => {
+		if (state.value == 10) return '#2563EB'
+		if (state.value == 20) return '#16A34A'
+		if (state.value == 30) return '#F59E0B'
+		if (state.value == 45) return '#EF4444'
+		return '#999999'
+	})
+
+	function fmtTime(iso: string): string {
+		if (iso.length == 0) {
+			return ''
+		}
+		let t = iso.replace('T', ' ')
+		const dot = t.indexOf('.')
+		if (dot > 0) {
+			t = t.substring(0, dot)
+		}
+		return t
+	}
+
+	/** 对齐 vben grid field=ext.u_realName；detail 常无 ext，再兜底 variable / 用户表 */
+	function resolveOperatorName(inst: UTSJSONObject, operatorId: string): string {
+		const ext = inst.getJSON('ext')
+		if (ext != null) {
+			const n = ext!.getString('u_realName') ?? ''
+			if (n.length > 0) {
+				return n
 			}
-		},
-		onLoad(options: OnLoadOptions) {
-			this.instanceId = options['instanceId'] ?? ''
-			this.loadAll()
-			this.loadUsers()
-		},
-		methods: {
-			fmtTime(iso: string): string {
-				if (iso.length == 0) {
-					return ''
-				}
-				let t = iso.replace('T', ' ')
-				const dot = t.indexOf('.')
-				if (dot > 0) {
-					t = t.substring(0, dot)
-				}
-				return t
-			},
-			/** 对齐 vben grid field=ext.u_realName；detail 常无 ext，再兜底 variable / 用户表 */
-			resolveOperatorName(inst: UTSJSONObject, operatorId: string): string {
-				const ext = inst.getJSON('ext')
-				if (ext != null) {
-					const n = ext!.getString('u_realName') ?? ''
-					if (n.length > 0) {
-						return n
+		}
+		const variable = inst.getJSON('variable')
+		if (variable != null) {
+			const n = variable!.getString('u_realName') ?? ''
+			if (n.length > 0) {
+				return n
+			}
+		}
+		if (operatorId.length > 0) {
+			for (let i = 0; i < users.value.length; i++) {
+				const id = users.value[i].getString('value') ?? ''
+				if (id == operatorId) {
+					const label = users.value[i].getString('label') ?? ''
+					if (label.length > 0) {
+						return label
 					}
 				}
-				const variable = inst.getJSON('variable')
-				if (variable != null) {
-					const n = variable!.getString('u_realName') ?? ''
-					if (n.length > 0) {
-						return n
-					}
+			}
+		}
+		return operatorId
+	}
+
+	function refreshOperatorNameIfNeeded(): void {
+		// users 异步到达后，若仍是纯 id 则再解析一次
+		if (operatorName.value.length == 0) {
+			return
+		}
+		let looksLikeId = true
+		for (let i = 0; i < operatorName.value.length; i++) {
+			const c = operatorName.value.charAt(i)
+			if (c < '0' || c > '9') {
+				looksLikeId = false
+				break
+			}
+		}
+		if (!looksLikeId) {
+			return
+		}
+		for (let i = 0; i < users.value.length; i++) {
+			const id = users.value[i].getString('value') ?? ''
+			if (id == operatorName.value) {
+				const label = users.value[i].getString('label') ?? ''
+				if (label.length > 0) {
+					operatorName.value = label
 				}
-				if (operatorId.length > 0) {
-					for (let i = 0; i < this.users.length; i++) {
-						const id = this.users[i].getString('value') ?? ''
-						if (id == operatorId) {
-							const label = this.users[i].getString('label') ?? ''
-							if (label.length > 0) {
-								return label
-							}
-						}
-					}
-				}
-				return operatorId
-			},
-			refreshOperatorNameIfNeeded() {
-				// users 异步到达后，若仍是纯 id 则再解析一次
-				if (this.operatorName.length == 0) {
-					return
-				}
-				let looksLikeId = true
-				for (let i = 0; i < this.operatorName.length; i++) {
-					const c = this.operatorName.charAt(i)
-					if (c < '0' || c > '9') {
-						looksLikeId = false
-						break
-					}
-				}
-				if (!looksLikeId) {
-					return
-				}
-				for (let i = 0; i < this.users.length; i++) {
-					const id = this.users[i].getString('value') ?? ''
-					if (id == this.operatorName) {
-						const label = this.users[i].getString('label') ?? ''
-						if (label.length > 0) {
-							this.operatorName = label
-						}
-						break
-					}
-				}
-			},
-			loadUsers() {
-				// /sys/user/page：行含 deptName/userName，选人弹层（带搜索+部门名）与发起人 id→姓名解析共用
-				userPage({
-					pageNum: 1,
-					pageSize: 200
-				} as UTSJSONObject).then((res) => {
-					const resObj = res as UTSJSONObject
-					const rows = resObj != null ? resObj!.getArray<UTSJSONObject>('rows') : null
-					this.users = [] as UTSJSONObject[]
-					if (rows != null) {
-						for (let i = 0; i < rows!.length; i++) {
-							const id = rows![i].getString('id') ?? ''
-							if (id.length == 0) {
-								continue
-							}
-							this.users.push({
-								label: rows![i].getString('realName') ?? id,
-								value: id,
-								desc: rows![i].getString('deptName') ?? ''
-							} as UTSJSONObject)
-						}
-					}
-					this.refreshOperatorNameIfNeeded()
-				}).catch((_e) => { })
-			},
-			async loadAll() {
-				if (this.instanceId.length == 0 || this.loading) {
-					return
-				}
-				this.loading = true
-				uni.showLoading({ title: '加载中', mask: true })
-				try {
-					// 1. 实例详情（formData/jsonObject/state）
-					const res = await processInstanceDetail(this.instanceId)
-					const inst = res as UTSJSONObject
-					this.state = inst.getNumber('state') ?? 0
-					this.displayName = inst.getString('displayName') ?? ''
-					this.createTime = inst.getString('createTime') ?? ''
-					this.processDefineId = inst.getString('processDefineId') ?? ''
-					const operatorId = inst.getString('operator') ?? ''
-					// 对齐 vben 列表：发起人展示 ext.u_realName（operator 是用户 id）
-					this.operatorName = this.resolveOperatorName(inst, operatorId)
-					const fd = inst.getJSON('formData')
-					if (fd != null) {
-						this.formData = fd!
-					}
-					const graph = inst.getJSON('jsonObject')
-					if (graph != null) {
-						this.graph = graph!
-						// 对齐 vben：只按 instanceUrl；SchemaWfForm → __schema__/getByTableName(name)
-						const instanceUrl = graph!.getString('instanceUrl') ?? ''
-						const defineName = inst.getString('name') ?? (graph!.getString('name') ?? '')
-						if (isSchemaWfForm(instanceUrl)) {
-							const embedded = schemaFromGraph(graph!)
-							if (embedded != null) {
-								this.schemaFields = embedded!
-							} else if (defineName.length > 0) {
-								try {
-									const modelRes = await schemaGetByTableName(defineName)
-									const tfields = schemaFromTableModel(modelRes as UTSJSONObject)
-									if (tfields != null) {
-										this.schemaFields = tfields!
-									}
-								} catch (_e) {
-									// 元数据缺失时仅无申请内容卡，不阻断详情
-								}
-							}
-							if (this.schemaFields.length == 0) {
-								uni.showToast({ title: 'SchemaWfForm 元数据表单加载失败', icon: 'none' })
-							}
-						} else {
-							const schema = resolveFormSchema(instanceUrl)
-							if (schema != null) {
-								this.schemaFields = schema!.fields
-							} else if (instanceUrl.length > 0) {
-								uni.showToast({ title: '未注册表单组件: ' + instanceUrl, icon: 'none' })
-							}
-						}
-						hydrateSchemaFormData(this.formData, this.schemaFields)
-						// 流程级发起附加字段回显（四开关；只显示 formData 有值的，避免空行噪音）
-						const extras = buildInitiatorExtraFields(graph, this.schemaFields)
-						for (let i = 0; i < extras.length; i++) {
-							if (this.formData.get(extras[i].field) != null) {
-								this.schemaFields.push(extras[i])
-							}
-						}
-					}
-					// 2. 高亮（整份透传，含 nodeProgress）+ 3. 审批记录
-					try {
-						const hl = await processInstanceHighLight(this.instanceId)
-						this.highLight = hl as UTSJSONObject
-					} catch (e) {
-						// 高亮失败不影响时间线展示（降级）
-					}
-					const rec = await processInstanceApprovalRecord(this.instanceId)
-					const rows = rec as UTSJSONObject[]
-					if (rows != null) {
-						this.records = rows
-					}
-				} catch (err) {
-					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-				} finally {
-					uni.hideLoading()
-					this.loading = false
-				}
-			},
-			onCreateCc() {
-				// 选人换 m-user-picker（多选 + 关键字搜索 + 部门名，对齐 vben「选择抄送人」弹窗）
-				if (this.users.length == 0) {
-					uni.showToast({ title: '用户列表加载中，请稍后', icon: 'none' })
-					this.loadUsers()
-					return
-				}
-				this.ccPickerVisible = true
-			},
-			onCcPickerOk(vals: string[]) {
-				if (vals.length == 0) {
-					return
-				}
-				const self = this
-				uni.showLoading({ title: '抄送中……', mask: true })
-				processInstanceCreateCc({
-					processInstanceId: self.instanceId,
-					actorIds: vals
-				} as UTSJSONObject).then((_r) => {
-					uni.hideLoading()
-					uni.showToast({ title: '已抄送 ' + vals.length.toString() + ' 人', icon: 'success' })
-				}).catch((err) => {
-					uni.hideLoading()
-					uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
-				})
-			},
-			onWithdraw() {
-				uni.showModal({
-					title: '撤回流程',
-					content: '撤回后流程作废且不可恢复，确定撤回？',
-					success: (res: ShowModalSuccess) => {
-						if (!res.confirm) return
-						uni.showLoading({ title: '撤回中……', mask: true })
-						processInstanceWithdraw(this.instanceId).then((_r) => {
-							uni.hideLoading()
-							uni.showToast({ title: '已撤回', icon: 'success' })
-							uni.setStorageSync('pages:workflow:my-instances:refresh', true)
-							uni.setStorageSync('pages:approval:approval:refresh', true)
-							setTimeout(() => {
-								this.loadAll()
-							}, 600)
-						}).catch((err) => {
-							uni.hideLoading()
-							uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-						})
-					}
-				})
-			},
-			onRestart() {
-				if (this.processDefineId.length == 0) {
-					uni.showToast({ title: '缺少流程定义', icon: 'none' })
-					return
-				}
-				uni.setStorageSync('pages:workflow:start-form:prefill', JSON.stringify(this.formData))
-				uni.navigateTo({
-					url: '/pages/workflow/start-form?defineId=' + this.processDefineId
-				})
+				break
 			}
 		}
 	}
+
+	function loadUsers(): void {
+		// /sys/user/page：行含 deptName/userName，选人弹层（带搜索+部门名）与发起人 id→姓名解析共用
+		userPage({
+			pageNum: 1,
+			pageSize: 200
+		} as UTSJSONObject).then((res) => {
+			const resObj = res as UTSJSONObject
+			const rows = resObj != null ? resObj!.getArray<UTSJSONObject>('rows') : null
+			users.value = [] as UTSJSONObject[]
+			if (rows != null) {
+				for (let i = 0; i < rows!.length; i++) {
+					const id = rows![i].getString('id') ?? ''
+					if (id.length == 0) {
+						continue
+					}
+					users.value.push({
+						label: rows![i].getString('realName') ?? id,
+						value: id,
+						desc: rows![i].getString('deptName') ?? ''
+					} as UTSJSONObject)
+				}
+			}
+			refreshOperatorNameIfNeeded()
+		}).catch((_e) => { })
+	}
+
+	async function loadAll(): Promise<void> {
+		if (instanceId.value.length == 0 || loading.value) {
+			return
+		}
+		loading.value = true
+		uni.showLoading({ title: '加载中', mask: true })
+		try {
+			// 1. 实例详情（formData/jsonObject/state）
+			const res = await processInstanceDetail(instanceId.value)
+			const inst = res as UTSJSONObject
+			state.value = inst.getNumber('state') ?? 0
+			displayName.value = inst.getString('displayName') ?? ''
+			createTime.value = inst.getString('createTime') ?? ''
+			processDefineId.value = inst.getString('processDefineId') ?? ''
+			const operatorId = inst.getString('operator') ?? ''
+			// 对齐 vben 列表：发起人展示 ext.u_realName（operator 是用户 id）
+			operatorName.value = resolveOperatorName(inst, operatorId)
+			const fd = inst.getJSON('formData')
+			if (fd != null) {
+				formData.value = fd!
+			}
+			// 局部 graphJson 避免与上方 graph ref 同名遮蔽（原选项式里是 this.graph 与局部 graph 分居两 scope）
+			const graphJson = inst.getJSON('jsonObject')
+			if (graphJson != null) {
+				graph.value = graphJson!
+				// 对齐 vben：只按 instanceUrl；SchemaWfForm → __schema__/getByTableName(name)
+				const instanceUrl = graphJson!.getString('instanceUrl') ?? ''
+				const defineName = inst.getString('name') ?? (graphJson!.getString('name') ?? '')
+				if (isSchemaWfForm(instanceUrl)) {
+					const embedded = schemaFromGraph(graphJson!)
+					if (embedded != null) {
+						schemaFields.value = embedded!
+					} else if (defineName.length > 0) {
+						try {
+							const modelRes = await schemaGetByTableName(defineName)
+							const tfields = schemaFromTableModel(modelRes as UTSJSONObject)
+							if (tfields != null) {
+								schemaFields.value = tfields!
+							}
+						} catch (_e) {
+							// 元数据缺失时仅无申请内容卡，不阻断详情
+						}
+					}
+					if (schemaFields.value.length == 0) {
+						uni.showToast({ title: 'SchemaWfForm 元数据表单加载失败', icon: 'none' })
+					}
+				} else {
+					const schema = resolveFormSchema(instanceUrl)
+					if (schema != null) {
+						schemaFields.value = schema!.fields
+					} else if (instanceUrl.length > 0) {
+						uni.showToast({ title: '未注册表单组件: ' + instanceUrl, icon: 'none' })
+					}
+				}
+				hydrateSchemaFormData(formData.value, schemaFields.value)
+				// 流程级发起附加字段回显（四开关；只显示 formData 有值的，避免空行噪音）
+				const extras = buildInitiatorExtraFields(graphJson, schemaFields.value)
+				for (let i = 0; i < extras.length; i++) {
+					if (formData.value.get(extras[i].field) != null) {
+						schemaFields.value.push(extras[i])
+					}
+				}
+			}
+			// 2. 高亮（整份透传，含 nodeProgress）+ 3. 审批记录
+			try {
+				const hl = await processInstanceHighLight(instanceId.value)
+				highLight.value = hl as UTSJSONObject
+			} catch (e) {
+				// 高亮失败不影响时间线展示（降级）
+			}
+			const rec = await processInstanceApprovalRecord(instanceId.value)
+			const rows = rec as UTSJSONObject[]
+			if (rows != null) {
+				records.value = rows
+			}
+		} catch (err) {
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		} finally {
+			uni.hideLoading()
+			loading.value = false
+		}
+	}
+
+	function onCreateCc(): void {
+		// 选人换 m-user-picker（多选 + 关键字搜索 + 部门名，对齐 vben「选择抄送人」弹窗）
+		if (users.value.length == 0) {
+			uni.showToast({ title: '用户列表加载中，请稍后', icon: 'none' })
+			loadUsers()
+			return
+		}
+		ccPickerVisible.value = true
+	}
+
+	function onCcPickerOk(vals: string[]): void {
+		if (vals.length == 0) {
+			return
+		}
+		uni.showLoading({ title: '抄送中……', mask: true })
+		processInstanceCreateCc({
+			processInstanceId: instanceId.value,
+			actorIds: vals
+		} as UTSJSONObject).then((_r) => {
+			uni.hideLoading()
+			uni.showToast({ title: '已抄送 ' + vals.length.toString() + ' 人', icon: 'success' })
+		}).catch((err) => {
+			uni.hideLoading()
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		})
+	}
+
+	function onWithdraw(): void {
+		uni.showModal({
+			title: '撤回流程',
+			content: '撤回后流程作废且不可恢复，确定撤回？',
+			success: (res: ShowModalSuccess) => {
+				if (!res.confirm) return
+				uni.showLoading({ title: '撤回中……', mask: true })
+				processInstanceWithdraw(instanceId.value).then((_r) => {
+					uni.hideLoading()
+					uni.showToast({ title: '已撤回', icon: 'success' })
+					uni.setStorageSync('pages:workflow:my-instances:refresh', true)
+					uni.setStorageSync('pages:approval:approval:refresh', true)
+					setTimeout(() => {
+						loadAll()
+					}, 600)
+				}).catch((err) => {
+					uni.hideLoading()
+					uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+				})
+			}
+		})
+	}
+
+	function onRestart(): void {
+		if (processDefineId.value.length == 0) {
+			uni.showToast({ title: '缺少流程定义', icon: 'none' })
+			return
+		}
+		uni.setStorageSync('pages:workflow:start-form:prefill', JSON.stringify(formData.value))
+		uni.navigateTo({
+			url: '/pages/workflow/start-form?defineId=' + processDefineId.value
+		})
+	}
+
+	onLoad((options: OnLoadOptions) => {
+		instanceId.value = options['instanceId'] ?? ''
+		loadAll()
+		loadUsers()
+	})
 </script>
 <style lang="less">
 	.m-card {

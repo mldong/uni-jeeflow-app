@@ -82,216 +82,216 @@
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
 	// 钉钉风格竖向流程树 · 递归渲染单元（只读 viewer）
 	// 节点卡片/条件分支/并行分支/高亮/会签成员，对齐 mldong-flow-designer-dingtalk viewer 语义
 	import { FlowNode, FlowBranch } from '@/util/flow_converter.uts'
+	// 蒸汽模式迁移：setup 下递归组件靠 SFC 文件名隐式自引用解析模板里的 <m-flow-tree> 标签
+	// （不能自导入 ./m-flow-tree.uvue——循环 import 会破坏 flow_converter 类型解析，实测 error18）
 
-	export default {
-		// 递归组件：uvue 按 name 自引用（模板内 m-flow-tree 即自身）
-		name: "m-flow-tree",
-		props: {
-			node: {
-				type: Object as PropType<FlowNode | null>,
-				default: null
-			},
-			// processInstance/highLight 完整响应（含 nodeProgress）
-			highLight: {
-				type: Object as PropType<UTSJSONObject | null>,
-				default: null
-			},
-			// 高亮节点 id 列表（activeNodeNames / historyNodeNames，匹配 node.id）
-			activeNames: {
-				type: Array as PropType<string[]>,
-				default: [] as string[]
-			},
-			historyNames: {
-				type: Array as PropType<string[]>,
-				default: [] as string[]
-			},
-			// 节点深度（0=start，1=第一个任务=申请人）
-			depth: {
-				type: Number,
-				default: 0
-			}
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	// 注意：node 是 class（FlowNode），setup 的 defineProps 类型字面量对 class 成员解析失败（实测 error18），
+	// 故本组件用 runtime 对象形式 defineProps + PropType（hello 官方示例同款）。
+	const props = defineProps({
+		node: {
+			type: Object as PropType<FlowNode | null>,
+			default: null
 		},
-		computed: {
-			kind(): string {
-				const n = this.node
-				return n == null ? '' : n!.kind()
-			},
-			base(): string {
-				const n = this.node
-				return n == null ? '' : n!.baseType()
-			},
-			branches(): FlowBranch[] {
-				const n = this.node
-				return n == null ? [] as FlowBranch[] : n!.branches
-			},
-			childNode(): FlowNode | null {
-				const n = this.node
-				return n == null ? null : n!.children
-			},
-			joinChain(): FlowNode | null {
-				const n = this.node
-				return n == null ? null : n!.joinChildren
-			},
-			// 分支区宽度（列宽 320rpx × n + 左右留白 20rpx），横向超宽时 scroll-x
-			branchesWidth(): number {
-				return this.branches.length * 320 + 20
-			},
-			// 顶/底横线：首列中心 → 末列中心（纯算术，免 getBoundingClientRect）
-			hlineLeft(): number {
-				return 170
-			},
-			hlineWidth(): number {
-				return (this.branches.length - 1) * 320
-			},
-			nameText(): string {
-				const n = this.node
-				if (n == null) return ''
-				const nm = n!.name
-				return nm.length > 0 ? nm : '未命名节点'
-			},
-			joinName(): string {
-				const n = this.node
-				if (n == null) return '合并点'
-				const nm = n!.name
-				return nm.length > 0 ? nm : '合并点'
-			},
-			isActive(): boolean {
-				const n = this.node
-				if (n == null) return false
-				return this.activeNames.includes(n!.id)
-			},
-			isHistory(): boolean {
-				const n = this.node
-				if (n == null) return false
-				return this.historyNames.includes(n!.id)
-			},
-			cardStateClass(): string {
-				if (this.isActive) return 'mft-card--active'
-				if (this.isHistory) return 'mft-card--history'
-				return ''
-			},
-			// 连线状态（对齐 AddButton：按端点节点状态组合）
-			// 前 history + 后 active → 蓝（指向正在审批节点）；两端 history → 绿（已审批）
-			lineClass(): string {
-				const n = this.node
-				if (n == null) return ''
-				const next = n!.children
-				const nextId = next == null ? '' : next!.id
-				if (nextId.length == 0) return ''
-				if (this.historyNames.includes(n!.id) && this.activeNames.includes(nextId)) {
-					return 'mft-line--active'
-				}
-				if (this.historyNames.includes(n!.id) && this.historyNames.includes(nextId)) {
-					return 'mft-line--history'
-				}
-				return ''
-			},
-			typeLabel(): string {
-				switch (this.base) {
-					case 'task': return this.depth == 1 ? '申请人' : '审批人'
-					case 'custom': return '自定义节点'
-					case 'subProcess': return '子流程'
-					default: return '任务'
-				}
-			},
-			typeIcon(): string {
-				switch (this.base) {
-					case 'task': return '✓'
-					case 'custom': return '★'
-					case 'subProcess': return '▣'
-					default: return '●'
-				}
-			},
-			// 会签识别：performType=ALL；countersignType 兼容平铺 / field 嵌套两种存储
-			countersignType(): string {
-				const n = this.node
-				if (n == null) return ''
-				const p = n!.properties
-				if (p.getString('performType') != 'ALL') return ''
-				const raw = p.getString('countersignType') ?? ''
-				if (raw.length > 0) {
-					return raw == 'SEQUENTIAL' ? 'SEQUENTIAL' : 'PARALLEL'
-				}
-				const field = p.getJSON('field')
-				if (field != null) {
-					const fr = field!.getString('countersignType') ?? ''
-					if (fr.length > 0) {
-						return fr == 'SEQUENTIAL' ? 'SEQUENTIAL' : 'PARALLEL'
-					}
-				}
-				return 'PARALLEL'
-			},
-			countersignBadge(): string {
-				const t = this.countersignType
-				if (t == 'SEQUENTIAL') return '顺序会签'
-				if (t == 'PARALLEL') return '并行会签'
-				return ''
-			},
-			countersignBadgeBg(): string {
-				return this.countersignType == 'SEQUENTIAL' ? '#FA8C16' : '#1677FF'
-			},
-			// 左侧彩条：active 橙 > history 绿 > 会签（并行蓝/顺序橙）> 主题蓝
-			barColor(): string {
-				if (this.isActive) return '#FF8C00'
-				if (this.isHistory) return '#52C41A'
-				const t = this.countersignType
-				if (t == 'SEQUENTIAL') return '#FA8C16'
-				if (t == 'PARALLEL') return '#1677FF'
-				return '#1890FF'
-			},
-			// 会签成员进度（highLight.nodeProgress[node.id].members）
-			members(): UTSJSONObject[] {
-				const n = this.node
-				if (n == null || this.highLight == null) return [] as UTSJSONObject[]
-				const np = this.highLight!.getJSON('nodeProgress')
-				if (np == null) return [] as UTSJSONObject[]
-				const p = np!.getJSON(n!.id)
-				if (p == null) return [] as UTSJSONObject[]
-				const ms = p!.getArray('members')
-				if (ms == null) return [] as UTSJSONObject[]
-				const out: UTSJSONObject[] = []
-				for (let i = 0; i < ms!.length; i++) {
-					const m = ms![i] as UTSJSONObject
-					if (m != null) out.push(m!)
-				}
-				return out
-			}
+		// processInstance/highLight 完整响应（含 nodeProgress）
+		highLight: {
+			type: Object as PropType<UTSJSONObject | null>,
+			default: null
 		},
-		methods: {
-			memberName(m: UTSJSONObject): string {
-				const nm = m.getString('name') ?? ''
-				if (nm.length > 0) return nm
-				return m.getString('id') ?? ''
-			},
-			memberDone(m: UTSJSONObject): boolean {
-				return m.getBoolean('done') == true
-			},
-			memberActive(m: UTSJSONObject): boolean {
-				return m.getBoolean('active') == true
-			},
-			memberMark(m: UTSJSONObject): string {
-				if (this.memberDone(m)) return '✓'
-				if (this.memberActive(m)) return '▶'
-				return '·'
-			},
-			memberMarkBg(m: UTSJSONObject): string {
-				if (this.memberDone(m)) return '#52C41A'
-				if (this.memberActive(m)) return '#FA8C16'
-				return '#F0F0F0'
-			},
-			memberMarkColor(m: UTSJSONObject): string {
-				if (this.memberDone(m) || this.memberActive(m)) return '#FFFFFF'
-				return '#A8ABB2'
-			},
-			memberNameColor(m: UTSJSONObject): string {
-				if (this.memberDone(m) || this.memberActive(m)) return '#333333'
-				return '#999999'
+		// 高亮节点 id 列表（activeNodeNames / historyNodeNames，匹配 node.id）
+		activeNames: {
+			type: Array as PropType<string[]>,
+			default: (): string[] => [] as string[]
+		},
+		historyNames: {
+			type: Array as PropType<string[]>,
+			default: (): string[] => [] as string[]
+		},
+		// 节点深度（0=start，1=第一个任务=申请人）
+		depth: {
+			type: Number,
+			default: 0
+		}
+	})
+
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	const kind = computed((): string => {
+		const n = props.node
+		return n == null ? '' : n!.kind()
+	})
+	const base = computed((): string => {
+		const n = props.node
+		return n == null ? '' : n!.baseType()
+	})
+	const branches = computed((): FlowBranch[] => {
+		const n = props.node
+		return n == null ? [] as FlowBranch[] : n!.branches
+	})
+	const childNode = computed((): FlowNode | null => {
+		const n = props.node
+		return n == null ? null : n!.children
+	})
+	const joinChain = computed((): FlowNode | null => {
+		const n = props.node
+		return n == null ? null : n!.joinChildren
+	})
+	// 分支区宽度（列宽 320rpx × n + 左右留白 20rpx），横向超宽时 scroll-x
+	const branchesWidth = computed((): number => {
+		return branches.value.length * 320 + 20
+	})
+	// 顶/底横线：首列中心 → 末列中心（纯算术，免 getBoundingClientRect）
+	const hlineLeft = computed((): number => {
+		return 170
+	})
+	const hlineWidth = computed((): number => {
+		return (branches.value.length - 1) * 320
+	})
+	const nameText = computed((): string => {
+		const n = props.node
+		if (n == null) return ''
+		const nm = n!.name
+		return nm.length > 0 ? nm : '未命名节点'
+	})
+	const joinName = computed((): string => {
+		const n = props.node
+		if (n == null) return '合并点'
+		const nm = n!.name
+		return nm.length > 0 ? nm : '合并点'
+	})
+	const isActive = computed((): boolean => {
+		const n = props.node
+		if (n == null) return false
+		return props.activeNames.includes(n!.id)
+	})
+	const isHistory = computed((): boolean => {
+		const n = props.node
+		if (n == null) return false
+		return props.historyNames.includes(n!.id)
+	})
+	const cardStateClass = computed((): string => {
+		if (isActive.value) return 'mft-card--active'
+		if (isHistory.value) return 'mft-card--history'
+		return ''
+	})
+	// 连线状态（对齐 AddButton：按端点节点状态组合）
+	// 前 history + 后 active → 蓝（指向正在审批节点）；两端 history → 绿（已审批）
+	const lineClass = computed((): string => {
+		const n = props.node
+		if (n == null) return ''
+		const next = n!.children
+		const nextId = next == null ? '' : next!.id
+		if (nextId.length == 0) return ''
+		if (props.historyNames.includes(n!.id) && props.activeNames.includes(nextId)) {
+			return 'mft-line--active'
+		}
+		if (props.historyNames.includes(n!.id) && props.historyNames.includes(nextId)) {
+			return 'mft-line--history'
+		}
+		return ''
+	})
+	const typeLabel = computed((): string => {
+		switch (base.value) {
+			case 'task': return props.depth == 1 ? '申请人' : '审批人'
+			case 'custom': return '自定义节点'
+			case 'subProcess': return '子流程'
+			default: return '任务'
+		}
+	})
+	const typeIcon = computed((): string => {
+		switch (base.value) {
+			case 'task': return '✓'
+			case 'custom': return '★'
+			case 'subProcess': return '▣'
+			default: return '●'
+		}
+	})
+	// 会签识别：performType=ALL；countersignType 兼容平铺 / field 嵌套两种存储
+	const countersignType = computed((): string => {
+		const n = props.node
+		if (n == null) return ''
+		const p = n!.properties
+		if (p.getString('performType') != 'ALL') return ''
+		const raw = p.getString('countersignType') ?? ''
+		if (raw.length > 0) {
+			return raw == 'SEQUENTIAL' ? 'SEQUENTIAL' : 'PARALLEL'
+		}
+		const field = p.getJSON('field')
+		if (field != null) {
+			const fr = field!.getString('countersignType') ?? ''
+			if (fr.length > 0) {
+				return fr == 'SEQUENTIAL' ? 'SEQUENTIAL' : 'PARALLEL'
 			}
 		}
+		return 'PARALLEL'
+	})
+	const countersignBadge = computed((): string => {
+		const t = countersignType.value
+		if (t == 'SEQUENTIAL') return '顺序会签'
+		if (t == 'PARALLEL') return '并行会签'
+		return ''
+	})
+	const countersignBadgeBg = computed((): string => {
+		return countersignType.value == 'SEQUENTIAL' ? '#FA8C16' : '#1677FF'
+	})
+	// 左侧彩条：active 橙 > history 绿 > 会签（并行蓝/顺序橙）> 主题蓝
+	const barColor = computed((): string => {
+		if (isActive.value) return '#FF8C00'
+		if (isHistory.value) return '#52C41A'
+		const t = countersignType.value
+		if (t == 'SEQUENTIAL') return '#FA8C16'
+		if (t == 'PARALLEL') return '#1677FF'
+		return '#1890FF'
+	})
+	// 会签成员进度（highLight.nodeProgress[node.id].members）
+	const members = computed((): UTSJSONObject[] => {
+		const n = props.node
+		if (n == null || props.highLight == null) return [] as UTSJSONObject[]
+		const np = props.highLight!.getJSON('nodeProgress')
+		if (np == null) return [] as UTSJSONObject[]
+		const p = np!.getJSON(n!.id)
+		if (p == null) return [] as UTSJSONObject[]
+		const ms = p!.getArray('members')
+		if (ms == null) return [] as UTSJSONObject[]
+		const out: UTSJSONObject[] = []
+		for (let i = 0; i < ms!.length; i++) {
+			const m = ms![i] as UTSJSONObject
+			if (m != null) out.push(m!)
+		}
+		return out
+	})
+
+	function memberName(m: UTSJSONObject): string {
+		const nm = m.getString('name') ?? ''
+		if (nm.length > 0) return nm
+		return m.getString('id') ?? ''
+	}
+	function memberDone(m: UTSJSONObject): boolean {
+		return m.getBoolean('done') == true
+	}
+	function memberActive(m: UTSJSONObject): boolean {
+		return m.getBoolean('active') == true
+	}
+	function memberMark(m: UTSJSONObject): string {
+		if (memberDone(m)) return '✓'
+		if (memberActive(m)) return '▶'
+		return '·'
+	}
+	function memberMarkBg(m: UTSJSONObject): string {
+		if (memberDone(m)) return '#52C41A'
+		if (memberActive(m)) return '#FA8C16'
+		return '#F0F0F0'
+	}
+	function memberMarkColor(m: UTSJSONObject): string {
+		if (memberDone(m) || memberActive(m)) return '#FFFFFF'
+		return '#A8ABB2'
+	}
+	function memberNameColor(m: UTSJSONObject): string {
+		if (memberDone(m) || memberActive(m)) return '#333333'
+		return '#999999'
 	}
 </script>
 

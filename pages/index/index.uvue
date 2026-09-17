@@ -115,408 +115,426 @@
 		<!-- #endif -->
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
 	import { processDesignListByType, processInstancePage, processInstanceCcList, processTaskTodoList, processTaskDoneList } from '@/api/workflow.uts'
 	import { dictGetByDictType } from '@/api/dict.uts'
 	import { refreshTabBadges } from '@/util/badge.uts'
 	import { resolveWfIcon } from '@/util/wf_icon_map.uts'
 	import { IS_LOGIN_KEY } from '@/util/const.uts'
+	import { $store } from '@/store/index'
 
-	export default {
-		data() {
-			return {
-				refresherTriggered: false,
-				// 快捷发起加载失败：true 显示可重试错误态（不再造假数据兜底）
-				menusLoadFailed: false,
-				// 快捷发起加载中：先渲染骨架，避免首屏闪现「暂无可发起流程」假空态
-				menusLoading: true,
-				// 最近发起加载失败：空态文案切换为可重试提示
-				recentLoadFailed: false,
-				skelItems: ['a', 'b', 'c', 'd'],
-				quickGroups: [] as UTSJSONObject[],
-				typeLabelMap: {} as UTSJSONObject,
-				recentInstances: [] as UTSJSONObject[],
-				// 工作台小指标：todoList/doneList/processInstance page/ccList 各拉 pageSize=1 取 recordCount
-				// （个人视角口径走现有分页接口，契约 12 §3；全局分析口径在统计 tab 的 stats/*）
-				workbenchCounts: {'todo': 0, 'done': 0, 'myStart': 0, 'cc': 0} as UTSJSONObject
-			};
-		},
-		computed: {
-			unreadTodo: (): number => {
-				return this.$store.getUnreadTodo()
-			},
-			unreadMsg: (): number => {
-				return this.$store.getUnreadMsg()
-			}
-		},
-		onShow() {
-			// 未登录一个请求都不发：本页是冷启动入口页，无 token 的批量业务请求每个都会
-			// 99990403→redirectToLogin，登录页被连跳多次（曾 3s 内 8 次）；跳转由 App.onShow 守卫统一做
-			if (uni.getStorageSync(IS_LOGIN_KEY) != true) {
-				return
-			}
-			refreshTabBadges()
-			this.loadWorkbenchCounts()
-			// 快捷发起只在首次加载/上次失败未恢复时拉取（失败时 quickGroups 已清空），
-			// 避免每次切 tab 闪骨架重拉
-			if (this.quickGroups.length == 0) {
-				this.loadTypeLabels().finally(() => {
-					this.loadAppMenus()
-				})
-			}
-			this.loadRecent()
-		},
-		methods: {
-			badgeText(n: number): string {
-				const v = Math.round(n)
-				return v > 99 ? '99+' : v.toString()
-			},
-			groupItems(group: UTSJSONObject): UTSJSONObject[] {
-				const arr = group.getArray('items')
-				const out: UTSJSONObject[] = []
-				if (arr == null) {
-					return out
-				}
-				for (let i = 0; i < arr.length; i++) {
-					out.push(arr[i] as UTSJSONObject)
-				}
-				return out
-			},
-			fmtTime(iso: string): string {
-				if (iso.length == 0) {
-					return ''
-				}
-				let t = iso.replace('T', ' ')
-				const dot = t.indexOf('.')
-				if (dot > 0) {
-					t = t.substring(0, dot)
-				}
-				// 工作台只显示月-日 时:分
-				if (t.length >= 16) {
-					return t.substring(5, 16)
-				}
-				return t
-			},
-			stateText(item: UTSJSONObject): string {
-				const s = item.getNumber('state') ?? 0
-				if (s == 10) return '审批中'
-				if (s == 20) return '已通过'
-				if (s == 30) return '已撤回'
-				if (s == 40) return '已中断'
-				if (s == 45) return '已拒绝'
-				if (s == 50) return '待提交'
-				if (s == 99) return '已废弃'
-				return '状态' + s.toString()
-			},
-			stateColor(item: UTSJSONObject): string {
-				const s = item.getNumber('state') ?? 0
-				if (s == 10) return '#2563EB'
-				if (s == 20) return '#16A34A'
-				if (s == 30) return '#F59E0B'
-				if (s == 45) return '#EF4444'
-				return '#999999'
-			},
-			handleRefresherrefresh() {
-				this.refresherTriggered = true
-				this.loadWorkbenchCounts()
-				refreshTabBadges().finally(() => {
-					this.loadTypeLabels().finally(() => {
-						this.loadAppMenus()
-					})
-					this.loadRecent().finally(() => {
-						this.refresherTriggered = false
-					})
-				})
-			},
-			// 四个小指标各拉 pageSize=1 只取 recordCount；单个失败静默保持 0，不阻塞工作台
-			loadWorkbenchCounts() {
-				this.countsPending(0, processTaskTodoList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
-				this.countsPending(1, processTaskDoneList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
-				this.countsPending(2, processInstancePage({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
-				this.countsPending(3, processInstanceCcList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
-			},
-			countsPending(idx: number, req: Promise<any>) {
-				const keys = ['todo', 'done', 'myStart', 'cc']
-				req.then((res) => {
-					const data = res as UTSJSONObject
-					const n = data.getNumber('recordCount') ?? 0
-					this.workbenchCounts[keys[idx]] = n
-				}).catch((_e) => {
-					// 保底 0
-				})
-			},
-			loadTypeLabels(): Promise<any> {
-				return new Promise<any>((resolve) => {
-					dictGetByDictType('wf_process_type').then((res) => {
-						const rows = res as UTSJSONObject[]
-						const map = {} as UTSJSONObject
-						if (rows != null) {
-							for (let i = 0; i < rows.length; i++) {
-								const row = rows[i]
-								const v = row.get('value')
-								const label = row.getString('label') ?? ''
-								if (v != null && label.length > 0) {
-									map[v.toString()] = label
-								}
-							}
-						}
-						this.typeLabelMap = map
-						resolve(true)
-					}).catch((_e) => {
-						resolve(false)
-					})
-				})
-			},
-			typeTitle(typeStr: string, apiTitle: string): string {
-				if (apiTitle.length > 0) {
-					return apiTitle
-				}
-				const fromDict = this.typeLabelMap.getString(typeStr)
-				if (fromDict != null && fromDict.length > 0) {
-					return fromDict
-				}
-				if (typeStr.length > 0) {
-					return '分类 ' + typeStr
-				}
-				return '其他'
-			},
-			loadAppMenus() {
-				this.menusLoading = true
-				processDesignListByType().then((res) => {
-					this.quickGroups = this.mapListByType(res)
-					this.menusLoadFailed = false
-				}).catch((_e) => {
-					// 鉴权失效拦截器已跳登录；网络/后端错误诚实呈现为可重试错误态
-					this.quickGroups = [] as UTSJSONObject[]
-					this.menusLoadFailed = true
-				}).finally(() => {
-					this.menusLoading = false
-				})
-			},
-			loadRecent(): Promise<any> {
-				return new Promise<any>((resolve) => {
-					processInstancePage({
-						pageNum: 1,
-						pageSize: 5
-					} as UTSJSONObject).then((res) => {
-						const data = res as UTSJSONObject
-						const rows = data.getArray('rows')
-						this.recentInstances = [] as UTSJSONObject[]
-						if (rows != null) {
-							for (let i = 0; i < rows.length; i++) {
-								this.recentInstances.push(rows[i] as UTSJSONObject)
-							}
-						}
-						this.recentLoadFailed = false
-						resolve(true)
-					}).catch((_e) => {
-						// 失败不再伪装成「暂无发起记录」：空态文案切为可重试
-						this.recentLoadFailed = true
-						resolve(false)
-					})
-				})
-			},
-			mapListByType(res: any): UTSJSONObject[] {
-				const colors = ['#2563EB', '#F59E0B', '#16A34A', '#8B5CF6', '#EC4899', '#0EA5E9']
-				const groupsOut: UTSJSONObject[] = []
-				let colorIdx = 0
-				const groups = this.sortGroupsByType(this.asGroupArray(res))
-				for (let g = 0; g < groups.length; g++) {
-					const group = groups[g]
-					const typeHint = group.getString('type') ?? ''
-					const apiTitle = group.getString('title') ?? ''
-					const items = group.getArray('items')
-					if (items == null) {
-						continue
-					}
-					const sortedItems = this.sortItemsByTitle(items as Array<UTSJSONObject>)
-					const mappedItems: UTSJSONObject[] = []
-					const seenNames: string[] = []
-					for (let i = 0; i < sortedItems.length; i++) {
-						const row = sortedItems[i]
-						const defineId = row.getString('processDefineId') ?? ''
-						if (defineId.length == 0) {
-							continue
-						}
-						const stateNum = row.getNumber('processDefineState')
-						if (stateNum != null && stateNum == 0) {
-							continue
-						}
-						const name = row.getString('name') ?? ''
-						if (name.length > 0) {
-							let dup = false
-							for (let s = 0; s < seenNames.length; s++) {
-								if (seenNames[s] == name) {
-									dup = true
-									break
-								}
-							}
-							if (dup) {
-								continue
-							}
-							seenNames.push(name)
-						}
-						const title = row.getString('displayName') ?? name
-						const apiIcon = row.getString('icon') ?? ''
-						mappedItems.push({
-							title: title.length > 0 ? title : name,
-							icon: resolveWfIcon(apiIcon, typeHint),
-							color: colors[colorIdx % colors.length],
-							define: name,
-							defineId: defineId
-						} as UTSJSONObject)
-						colorIdx++
-					}
-					if (mappedItems.length > 0) {
-						groupsOut.push({
-							title: this.typeTitle(typeHint, apiTitle),
-							type: typeHint,
-							items: mappedItems
-						} as UTSJSONObject)
-					}
-				}
-				return groupsOut
-			},
-			sortGroupsByType(groups: UTSJSONObject[]): UTSJSONObject[] {
-				const out: UTSJSONObject[] = []
-				for (let i = 0; i < groups.length; i++) {
-					out.push(groups[i])
-				}
-				for (let i = 0; i < out.length; i++) {
-					for (let j = i + 1; j < out.length; j++) {
-						const ti = this.parseTypeNum(out[i].getString('type') ?? '')
-						const tj = this.parseTypeNum(out[j].getString('type') ?? '')
-						if (tj < ti) {
-							const tmp = out[i]
-							out[i] = out[j]
-							out[j] = tmp
-						}
-					}
-				}
-				return out
-			},
-			parseTypeNum(typeStr: string): number {
-				if (typeStr.length == 0) {
-					return 999999
-				}
-				const n = parseFloat(typeStr)
-				if (isNaN(n)) {
-					return 999999
-				}
-				return n
-			},
-			sortItemsByTitle(items: Array<UTSJSONObject>): UTSJSONObject[] {
-				const out: UTSJSONObject[] = []
-				for (let i = 0; i < items.length; i++) {
-					out.push(items[i] as UTSJSONObject)
-				}
-				for (let i = 0; i < out.length; i++) {
-					for (let j = i + 1; j < out.length; j++) {
-						const ai = this.itemSortKey(out[i])
-						const aj = this.itemSortKey(out[j])
-						if (aj < ai) {
-							const tmp = out[i]
-							out[i] = out[j]
-							out[j] = tmp
-						}
-					}
-				}
-				return out
-			},
-			itemSortKey(row: UTSJSONObject): string {
-				const title = row.getString('displayName') ?? ''
-				if (title.length > 0) {
-					return title
-				}
-				return row.getString('name') ?? ''
-			},
-			asGroupArray(res: any): UTSJSONObject[] {
-				const out: UTSJSONObject[] = []
-				if (res == null) {
-					return out
-				}
-				try {
-					const wrapped = JSON.parse('{"list":' + JSON.stringify(res) + '}') as UTSJSONObject
-					const list = wrapped.getArray('list')
-					if (list != null) {
-						for (let i = 0; i < list.length; i++) {
-							out.push(list[i] as UTSJSONObject)
-						}
-						return out
-					}
-				} catch (_e) {
-					// fallthrough
-				}
-				if (typeof res === 'object') {
-					const asObj = res as UTSJSONObject
-					const maybeArr = res as Array<UTSJSONObject>
-					if (asObj.getString == null && maybeArr.length != null) {
-						for (let i = 0; i < maybeArr.length; i++) {
-							out.push(maybeArr[i])
-						}
-						return out
-					}
-					const rows = asObj.getArray('rows') ?? asObj.getArray('list') ?? asObj.getArray('data')
-					if (rows != null) {
-						for (let i = 0; i < rows.length; i++) {
-							out.push(rows[i] as UTSJSONObject)
-						}
-					}
-				}
-				return out
-			},
-			goApproval(tab: number) {
-				uni.setStorageSync('pages:approval:tab', tab)
-				uni.switchTab({
-					url: '/pages/approval/approval'
-				})
-			},
-			goMiniIndicator(tab: number) {
-				if (tab === 3) {
-					uni.navigateTo({ url: '/pages/workflow/my-instances' })
-				} else {
-					uni.setStorageSync('pages:approval:tab', tab)
-					uni.switchTab({ url: '/pages/approval/approval' })
-				}
-			},
-			goMessage() {
-				uni.navigateTo({
-					url: '/pages/message/message'
-				})
-			},
-			goMyInstance() {
-				uni.navigateTo({
-					url: '/pages/workflow/my-instances'
-				})
-			},
-			onTapRecent(item: UTSJSONObject) {
-				const id = item.getString('id') ?? ''
-				if (id.length == 0) {
-					return
-				}
-				uni.navigateTo({
-					url: '/pages/workflow/instance-detail?instanceId=' + id
-				})
-			},
-			onQuickTap(item: UTSJSONObject) {
-				const defineId = item.getString('defineId') ?? ''
-				const defineName = item.getString('define') ?? ''
-				if (defineId.length > 0) {
-					uni.navigateTo({
-						url: '/pages/workflow/start-form?defineId=' + defineId
-					})
-				} else if (defineName.length > 0) {
-					uni.navigateTo({
-						url: '/pages/workflow/start-form?defineName=' + defineName
-					})
-				} else {
-					uni.navigateTo({
-						url: '/pages/workflow/start'
-					})
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	const refresherTriggered = ref(false)
+	// 快捷发起加载失败：true 显示可重试错误态（不再造假数据兜底）
+	const menusLoadFailed = ref(false)
+	// 快捷发起加载中：先渲染骨架，避免首屏闪现「暂无可发起流程」假空态
+	const menusLoading = ref(true)
+	// 最近发起加载失败：空态文案切换为可重试提示
+	const recentLoadFailed = ref(false)
+	const skelItems = ref<string[]>(['a', 'b', 'c', 'd'])
+	const quickGroups = ref<UTSJSONObject[]>([])
+	const typeLabelMap = ref<UTSJSONObject>({} as UTSJSONObject)
+	const recentInstances = ref<UTSJSONObject[]>([])
+	// 工作台小指标：todoList/doneList/processInstance page/ccList 各拉 pageSize=1 取 recordCount
+	// （个人视角口径走现有分页接口，契约 12 §3；全局分析口径在统计 tab 的 stats/*）
+	const workbenchCounts = ref<UTSJSONObject>({'todo': 0, 'done': 0, 'myStart': 0, 'cc': 0} as UTSJSONObject)
+
+	const unreadTodo = computed((): number => {
+		return $store.getUnreadTodo()
+	})
+	const unreadMsg = computed((): number => {
+		return $store.getUnreadMsg()
+	})
+
+	function badgeText(n: number): string {
+		const v = Math.round(n)
+		return v > 99 ? '99+' : v.toString()
+	}
+
+	function groupItems(group: UTSJSONObject): UTSJSONObject[] {
+		const arr = group.getArray('items')
+		const out: UTSJSONObject[] = []
+		if (arr == null) {
+			return out
+		}
+		for (let i = 0; i < arr.length; i++) {
+			out.push(arr[i] as UTSJSONObject)
+		}
+		return out
+	}
+
+	function fmtTime(iso: string): string {
+		if (iso.length == 0) {
+			return ''
+		}
+		let t = iso.replace('T', ' ')
+		const dot = t.indexOf('.')
+		if (dot > 0) {
+			t = t.substring(0, dot)
+		}
+		// 工作台只显示月-日 时:分
+		if (t.length >= 16) {
+			return t.substring(5, 16)
+		}
+		return t
+	}
+
+	function stateText(item: UTSJSONObject): string {
+		const s = item.getNumber('state') ?? 0
+		if (s == 10) return '审批中'
+		if (s == 20) return '已通过'
+		if (s == 30) return '已撤回'
+		if (s == 40) return '已中断'
+		if (s == 45) return '已拒绝'
+		if (s == 50) return '待提交'
+		if (s == 99) return '已废弃'
+		return '状态' + s.toString()
+	}
+
+	function stateColor(item: UTSJSONObject): string {
+		const s = item.getNumber('state') ?? 0
+		if (s == 10) return '#2563EB'
+		if (s == 20) return '#16A34A'
+		if (s == 30) return '#F59E0B'
+		if (s == 45) return '#EF4444'
+		return '#999999'
+	}
+
+	function parseTypeNum(typeStr: string): number {
+		if (typeStr.length == 0) {
+			return 999999
+		}
+		const n = parseFloat(typeStr)
+		if (isNaN(n)) {
+			return 999999
+		}
+		return n
+	}
+
+	function itemSortKey(row: UTSJSONObject): string {
+		const title = row.getString('displayName') ?? ''
+		if (title.length > 0) {
+			return title
+		}
+		return row.getString('name') ?? ''
+	}
+
+	function sortGroupsByType(groups: UTSJSONObject[]): UTSJSONObject[] {
+		const out: UTSJSONObject[] = []
+		for (let i = 0; i < groups.length; i++) {
+			out.push(groups[i])
+		}
+		for (let i = 0; i < out.length; i++) {
+			for (let j = i + 1; j < out.length; j++) {
+				const ti = parseTypeNum(out[i].getString('type') ?? '')
+				const tj = parseTypeNum(out[j].getString('type') ?? '')
+				if (tj < ti) {
+					const tmp = out[i]
+					out[i] = out[j]
+					out[j] = tmp
 				}
 			}
 		}
+		return out
 	}
+
+	function sortItemsByTitle(items: Array<UTSJSONObject>): UTSJSONObject[] {
+		const out: UTSJSONObject[] = []
+		for (let i = 0; i < items.length; i++) {
+			out.push(items[i] as UTSJSONObject)
+		}
+		for (let i = 0; i < out.length; i++) {
+			for (let j = i + 1; j < out.length; j++) {
+				const ai = itemSortKey(out[i])
+				const aj = itemSortKey(out[j])
+				if (aj < ai) {
+					const tmp = out[i]
+					out[i] = out[j]
+					out[j] = tmp
+				}
+			}
+		}
+		return out
+	}
+
+	function asGroupArray(res: any): UTSJSONObject[] {
+		const out: UTSJSONObject[] = []
+		if (res == null) {
+			return out
+		}
+		try {
+			const wrapped = JSON.parse('{"list":' + JSON.stringify(res) + '}') as UTSJSONObject
+			const list = wrapped.getArray('list')
+			if (list != null) {
+				for (let i = 0; i < list.length; i++) {
+					out.push(list[i] as UTSJSONObject)
+				}
+				return out
+			}
+		} catch (_e) {
+			// fallthrough
+		}
+		if (typeof res === 'object') {
+			const asObj = res as UTSJSONObject
+			const maybeArr = res as Array<UTSJSONObject>
+			if (asObj.getString == null && maybeArr.length != null) {
+				for (let i = 0; i < maybeArr.length; i++) {
+					out.push(maybeArr[i])
+				}
+				return out
+			}
+			const rows = asObj.getArray('rows') ?? asObj.getArray('list') ?? asObj.getArray('data')
+			if (rows != null) {
+				for (let i = 0; i < rows.length; i++) {
+					out.push(rows[i] as UTSJSONObject)
+				}
+			}
+		}
+		return out
+	}
+
+	function typeTitle(typeStr: string, apiTitle: string): string {
+		if (apiTitle.length > 0) {
+			return apiTitle
+		}
+		const fromDict = typeLabelMap.value.getString(typeStr)
+		if (fromDict != null && fromDict.length > 0) {
+			return fromDict
+		}
+		if (typeStr.length > 0) {
+			return '分类 ' + typeStr
+		}
+		return '其他'
+	}
+
+	function mapListByType(res: any): UTSJSONObject[] {
+		const colors = ['#2563EB', '#F59E0B', '#16A34A', '#8B5CF6', '#EC4899', '#0EA5E9']
+		const groupsOut: UTSJSONObject[] = []
+		let colorIdx = 0
+		const groups = sortGroupsByType(asGroupArray(res))
+		for (let g = 0; g < groups.length; g++) {
+			const group = groups[g]
+			const typeHint = group.getString('type') ?? ''
+			const apiTitle = group.getString('title') ?? ''
+			const items = group.getArray('items')
+			if (items == null) {
+				continue
+			}
+			const sortedItems = sortItemsByTitle(items as Array<UTSJSONObject>)
+			const mappedItems: UTSJSONObject[] = []
+			const seenNames: string[] = []
+			for (let i = 0; i < sortedItems.length; i++) {
+				const row = sortedItems[i]
+				const defineId = row.getString('processDefineId') ?? ''
+				if (defineId.length == 0) {
+					continue
+				}
+				const stateNum = row.getNumber('processDefineState')
+				if (stateNum != null && stateNum == 0) {
+					continue
+				}
+				const name = row.getString('name') ?? ''
+				if (name.length > 0) {
+					let dup = false
+					for (let s = 0; s < seenNames.length; s++) {
+						if (seenNames[s] == name) {
+							dup = true
+							break
+						}
+					}
+					if (dup) {
+						continue
+					}
+					seenNames.push(name)
+				}
+				const title = row.getString('displayName') ?? name
+				const apiIcon = row.getString('icon') ?? ''
+				mappedItems.push({
+					title: title.length > 0 ? title : name,
+					icon: resolveWfIcon(apiIcon, typeHint),
+					color: colors[colorIdx % colors.length],
+					define: name,
+					defineId: defineId
+				} as UTSJSONObject)
+				colorIdx++
+			}
+			if (mappedItems.length > 0) {
+				groupsOut.push({
+					title: typeTitle(typeHint, apiTitle),
+					type: typeHint,
+					items: mappedItems
+				} as UTSJSONObject)
+			}
+		}
+		return groupsOut
+	}
+
+	function countsPending(idx: number, req: Promise<any>): void {
+		const keys = ['todo', 'done', 'myStart', 'cc']
+		req.then((res) => {
+			const data = res as UTSJSONObject
+			const n = data.getNumber('recordCount') ?? 0
+			workbenchCounts.value[keys[idx]] = n
+		}).catch((_e) => {
+			// 保底 0
+		})
+	}
+
+	// 四个小指标各拉 pageSize=1 只取 recordCount；单个失败静默保持 0，不阻塞工作台
+	function loadWorkbenchCounts(): void {
+		countsPending(0, processTaskTodoList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+		countsPending(1, processTaskDoneList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+		countsPending(2, processInstancePage({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+		countsPending(3, processInstanceCcList({ pageNum: 1, pageSize: 1 } as UTSJSONObject))
+	}
+
+	function loadTypeLabels(): Promise<any> {
+		return new Promise<any>((resolve) => {
+			dictGetByDictType('wf_process_type').then((res) => {
+				const rows = res as UTSJSONObject[]
+				const map = {} as UTSJSONObject
+				if (rows != null) {
+					for (let i = 0; i < rows.length; i++) {
+						const row = rows[i]
+						const v = row.get('value')
+						const label = row.getString('label') ?? ''
+						if (v != null && label.length > 0) {
+							map[v.toString()] = label
+						}
+					}
+				}
+				typeLabelMap.value = map
+				resolve(true)
+			}).catch((_e) => {
+				resolve(false)
+			})
+		})
+	}
+
+	function loadAppMenus(): void {
+		menusLoading.value = true
+		processDesignListByType().then((res) => {
+			quickGroups.value = mapListByType(res)
+			menusLoadFailed.value = false
+		}).catch((_e) => {
+			// 鉴权失效拦截器已跳登录；网络/后端错误诚实呈现为可重试错误态
+			quickGroups.value = [] as UTSJSONObject[]
+			menusLoadFailed.value = true
+		}).finally(() => {
+			menusLoading.value = false
+		})
+	}
+
+	function loadRecent(): Promise<any> {
+		return new Promise<any>((resolve) => {
+			processInstancePage({
+				pageNum: 1,
+				pageSize: 5
+			} as UTSJSONObject).then((res) => {
+				const data = res as UTSJSONObject
+				const rows = data.getArray('rows')
+				recentInstances.value = [] as UTSJSONObject[]
+				if (rows != null) {
+					for (let i = 0; i < rows.length; i++) {
+						recentInstances.value.push(rows[i] as UTSJSONObject)
+					}
+				}
+				recentLoadFailed.value = false
+				resolve(true)
+			}).catch((_e) => {
+				// 失败不再伪装成「暂无发起记录」：空态文案切为可重试
+				recentLoadFailed.value = true
+				resolve(false)
+			})
+		})
+	}
+
+	function handleRefresherrefresh(): void {
+		refresherTriggered.value = true
+		loadWorkbenchCounts()
+		refreshTabBadges().finally(() => {
+			loadTypeLabels().finally(() => {
+				loadAppMenus()
+			})
+			loadRecent().finally(() => {
+				refresherTriggered.value = false
+			})
+		})
+	}
+
+	function goApproval(tab: number): void {
+		uni.setStorageSync('pages:approval:tab', tab)
+		uni.switchTab({
+			url: '/pages/approval/approval'
+		})
+	}
+
+	function goMiniIndicator(tab: number): void {
+		if (tab === 3) {
+			uni.navigateTo({ url: '/pages/workflow/my-instances' })
+		} else {
+			uni.setStorageSync('pages:approval:tab', tab)
+			uni.switchTab({ url: '/pages/approval/approval' })
+		}
+	}
+
+	function goMessage(): void {
+		uni.navigateTo({
+			url: '/pages/message/message'
+		})
+	}
+
+	function goMyInstance(): void {
+		uni.navigateTo({
+			url: '/pages/workflow/my-instances'
+		})
+	}
+
+	function onTapRecent(item: UTSJSONObject): void {
+		const id = item.getString('id') ?? ''
+		if (id.length == 0) {
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/workflow/instance-detail?instanceId=' + id
+		})
+	}
+
+	function onQuickTap(item: UTSJSONObject): void {
+		const defineId = item.getString('defineId') ?? ''
+		const defineName = item.getString('define') ?? ''
+		if (defineId.length > 0) {
+			uni.navigateTo({
+				url: '/pages/workflow/start-form?defineId=' + defineId
+			})
+		} else if (defineName.length > 0) {
+			uni.navigateTo({
+				url: '/pages/workflow/start-form?defineName=' + defineName
+			})
+		} else {
+			uni.navigateTo({
+				url: '/pages/workflow/start'
+			})
+		}
+	}
+
+	onShow(() => {
+		// 未登录一个请求都不发：本页是冷启动入口页，无 token 的批量业务请求每个都会
+		// 99990403→redirectToLogin，登录页被连跳多次（曾 3s 内 8 次）；跳转由 App.onShow 守卫统一做
+		if (uni.getStorageSync(IS_LOGIN_KEY) != true) {
+			return
+		}
+		refreshTabBadges()
+		loadWorkbenchCounts()
+		// 快捷发起只在首次加载/上次失败未恢复时拉取（失败时 quickGroups 已清空），
+		// 避免每次切 tab 闪骨架重拉
+		if (quickGroups.value.length == 0) {
+			loadTypeLabels().finally(() => {
+				loadAppMenus()
+			})
+		}
+		loadRecent()
+	})
 </script>
 <style lang="less">
 	.m-summary {

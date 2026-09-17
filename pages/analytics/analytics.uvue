@@ -122,11 +122,12 @@
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
 	// 真实接口（spec 06 §4.2 三 stats action，登录放行无权限码）
 	import { statsOverview, statsTrend, statsGroup } from '@/api/stats.uts'
 	import { userSelect } from '@/api/user.uts'
 
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	const STATE_LABEL: UTSJSONObject = {
 		'10': '审批中',
 		'20': '已完成',
@@ -137,281 +138,294 @@
 		'99': '已废弃'
 	} as UTSJSONObject
 
-	export default {
-		data() {
-			return {
-				refresherTriggered: false,
-				loading: true,
-				trendRange: '7d',
-				overview: {} as UTSJSONObject,
-				trendBuckets: [] as UTSJSONObject[],
-				stateRows: [] as UTSJSONObject[],
-				defineRows: [] as UTSJSONObject[],
-				stuckNodeRows: [] as UTSJSONObject[],
-				stuckApproverRows: [] as UTSJSONObject[],
-				pendingCount: 6,
-				// 用户 id→姓名映射（stuckApprover 等维度的 key 是雪花 id、后端 label 恒空，
-				// 契约 12 §3：前端查用户表；无权限/失败静默降级显示 id）
-				userMap: {} as UTSJSONObject
-			};
-		},
-		onShow() {
-			this.loading = true
-			this.loadUserMap()
-			this.loadOverview()
-			this.loadTrend()
-			this.loadGroupState()
-			this.loadGroupDefine()
-			this.loadGroupStuckNode()
-			this.loadGroupStuckApprover()
-		},
-		computed: {
-			trendBarWidth(): number {
-				if (this.trendRange == '30d') return 6
-				return 14
-			}
-		},
-		methods: {
-			pad2(n: number): string {
-				const s = n.toString()
-				if (s.length < 2) return '0' + s
-				return s
-			},
-			fmtDT(d: Date): string {
-				return d.getFullYear().toString() + '-' + this.pad2(d.getMonth() + 1) + '-' + this.pad2(d.getDate())
-					+ ' ' + this.pad2(d.getHours()) + ':' + this.pad2(d.getMinutes()) + ':' + this.pad2(d.getSeconds())
-			},
-			// trend 的 start/end 是必填（spec 06），按分段算时间窗；月窗从 11 个月前当月 1 号起（跨年由 Date 构造器处理）
-			trendWindow(): UTSJSONObject {
-				const now = new Date()
-				const end = this.fmtDT(now)
-				let start: string
-				let granularity = 'day'
-				if (this.trendRange == '12m') {
-					granularity = 'month'
-					const begin = new Date(now.getFullYear(), now.getMonth() - 11, 1, 0, 0, 0)
-					start = this.fmtDT(begin)
-				} else if (this.trendRange == '30d') {
-					const begin = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0)
-					start = this.fmtDT(begin)
-				} else {
-					const begin = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0)
-					start = this.fmtDT(begin)
-				}
-				return { start: start, end: end, granularity: granularity } as UTSJSONObject
-			},
-			// goframe 后端 decimal 序列化成字符串（"0.1481"），getNumber 拿 null——兼容解析
-			numOf(obj: UTSJSONObject, key: string): number | null {
-				const n = obj.getNumber(key)
-				if (n != null) return n
-				const s = obj.getString(key)
-				if (s != null && s.length > 0) {
-					const v = parseFloat(s)
-					if (!isNaN(v)) return v
-				}
-				return null
-			},
-			// group 行通用规整：label 后端可能为 null（stuckNode 的 key 即节点名、approver 系 key 是用户 id）
-			mapRow(item: UTSJSONObject, resolveName: boolean): UTSJSONObject {
-				const key = item.getString('key') ?? ''
-				let label = item.getString('label') ?? ''
-				if (label.length == 0 && resolveName) {
-					const n = this.userMap.getString(key) ?? ''
-					if (n.length > 0) label = n
-				}
-				if (label.length == 0) {
-					label = key
-				}
-				const row = {
-					key: key,
-					label: label,
-					count: item.getNumber('count') ?? 0
-				} as UTSJSONObject
-				// avgDurationSeconds 后端可能为 null（如 state/stuckNode 维度），非空才带，UTS 字面量不放 null
-				const avg = item.getNumber('avgDurationSeconds')
-				if (avg != null) {
-					row['avgDurationSeconds'] = avg
-				}
-				return row
-			},
-			stateLabel(key: string): string {
-				const label = STATE_LABEL.getString(key)
-				if (label != null) {
-					return label
-				}
-				return '状态' + key
-			},
-			fmtHours(): string {
-				const sec = this.overview.getNumber('avgDurationSeconds') ?? 0
-				if (sec == 0) return '--'
-				const h = (sec / 3600.0).toFixed(1)
-				return h + '小时'
-			},
-			fmtPct(rate: number | null): string {
-				if (rate == null) return '--'
-				return (rate * 100).toFixed(1)
-			},
-			fmtOverdue(): string {
-				const n = this.overview.getNumber('overdueTaskCount')
-				if (n == null) return '--'
-				return n.toString()
-			},
-			fmtOnTime(): string {
-				const rate = this.numOf(this.overview, 'onTimeRate')
-				const overdue = this.overview.getNumber('overdueTaskCount') ?? 0
-				if (overdue == 0 && (rate == null || rate == 0)) return '--'
-				if (rate == null) return '--'
-				return (rate * 100).toFixed(1) + '%'
-			},
-			switchTrend(range: string) {
-				this.trendRange = range
-				this.loadTrend()
-			},
-			loadUserMap() {
-				userSelect({ pageNum: 1, pageSize: 200 } as UTSJSONObject).then((res) => {
-					let rows = res as UTSJSONObject[]
-					if (rows == null) {
-						return
-					}
-					const map = {} as UTSJSONObject
-					for (let i = 0; i < rows.length; i++) {
-						const id = rows[i].getString('value') ?? ''
-						const name = rows[i].getString('label') ?? ''
-						if (id.length > 0 && name.length > 0) {
-							map[id] = name
-						}
-					}
-					this.userMap = map
-				}).catch((_e) => {
-					// 查不到用户表就显示 id，不阻塞页面
-				})
-			},
-			loadOverview() {
-				statsOverview({} as UTSJSONObject).then((res) => {
-					this.overview = res as UTSJSONObject
-					// 字符串 rate 原地回填为数值，模板 getNumber 才能取到
-					const rr = this.numOf(this.overview, 'rejectRate')
-					if (rr != null) this.overview['rejectRate'] = rr
-					const cr = this.numOf(this.overview, 'countersignRate')
-					if (cr != null) this.overview['countersignRate'] = cr
-				}).catch((_e) => {}).finally(() => {
-					this.checkLoadingDone()
-				})
-			},
-			loadTrend() {
-				statsTrend(this.trendWindow()).then((res) => {
-					const arr = res as UTSJSONObject[]
-					const out: UTSJSONObject[] = []
-					if (arr != null) {
-						for (let i = 0; i < arr.length; i++) {
-							const item = arr[i]
-							out.push({
-								label: this.shortBucketLabel(item.getString('bucket') ?? ''),
-								a: item.getNumber('started') ?? 0,
-								b: item.getNumber('finished') ?? 0
-							} as UTSJSONObject)
-						}
-					}
-					this.trendBuckets = out
-				}).catch((_e) => {}).finally(() => {
-					this.checkLoadingDone()
-				})
-			},
-			// x 轴短标签：桶列多（30d 每列仅 ~30rpx）时完整日期被 lines:1 截成「20」，
-			// 按 Tab 预裁——7d 显 MM-dd / 30d 显 dd / 12m 显 yy-MM
-			shortBucketLabel(bucket: string): string {
-				if (this.trendRange == '12m') {
-					return bucket.length >= 7 ? bucket.substring(2, 7) : bucket
-				}
-				if (this.trendRange == '30d') {
-					return bucket.length >= 10 ? bucket.substring(8, 10) : bucket
-				}
-				return bucket.length >= 10 ? bucket.substring(5, 10) : bucket
-			},
-			loadGroupState() {
-				statsGroup({ dimension: 'state' } as UTSJSONObject).then((res) => {
-					const arr = res as UTSJSONObject[]
-					const out: UTSJSONObject[] = []
-					if (arr != null) {
-						for (let i = 0; i < arr.length; i++) {
-							const item = arr[i]
-							const key = item.getString('key') ?? ''
-							out.push({
-								label: this.stateLabel(key),
-								count: item.getNumber('count') ?? 0
-							} as UTSJSONObject)
-						}
-					}
-					this.stateRows = out
-				}).catch((_e) => {}).finally(() => {
-					this.checkLoadingDone()
-				})
-			},
-			loadGroupDefine() {
-				statsGroup({ dimension: 'define' } as UTSJSONObject).then((res) => {
-					const arr = res as UTSJSONObject[]
-					const out: UTSJSONObject[] = []
-					if (arr != null) {
-						for (let i = 0; i < arr.length; i++) {
-							out.push(this.mapRow(arr[i], false))
-						}
-					}
-					this.defineRows = out
-				}).catch((_e) => {}).finally(() => {
-					this.checkLoadingDone()
-				})
-			},
-			loadGroupStuckNode() {
-				statsGroup({ dimension: 'stuckNode' } as UTSJSONObject).then((res) => {
-					const arr = res as UTSJSONObject[]
-					const out: UTSJSONObject[] = []
-					if (arr != null) {
-						for (let i = 0; i < arr.length; i++) {
-							out.push(this.mapRow(arr[i], false))
-						}
-					}
-					this.stuckNodeRows = out
-				}).catch((_e) => {}).finally(() => {
-					this.checkLoadingDone()
-				})
-			},
-			loadGroupStuckApprover() {
-				statsGroup({ dimension: 'stuckApprover' } as UTSJSONObject).then((res) => {
-					const arr = res as UTSJSONObject[]
-					const out: UTSJSONObject[] = []
-					if (arr != null) {
-						for (let i = 0; i < arr.length; i++) {
-							out.push(this.mapRow(arr[i], true))
-						}
-					}
-					this.stuckApproverRows = out
-				}).catch((_e) => {}).finally(() => {
-					this.checkLoadingDone()
-				})
-			},
-			checkLoadingDone() {
-				this.pendingCount--
-				if (this.pendingCount <= 0) {
-					this.loading = false
-				}
-			},
-			handleRefresherrefresh() {
-				this.refresherTriggered = true
-				this.pendingCount = 6
-				this.loading = true
-				this.loadUserMap()
-				this.loadOverview()
-				this.loadTrend()
-				this.loadGroupState()
-				this.loadGroupDefine()
-				this.loadGroupStuckNode()
-				this.loadGroupStuckApprover()
-				setTimeout(() => {
-					this.refresherTriggered = false
-				}, 800)
-			}
+	const refresherTriggered = ref(false)
+	const loading = ref(true)
+	const trendRange = ref('7d')
+	const overview = ref<UTSJSONObject>({} as UTSJSONObject)
+	const trendBuckets = ref<UTSJSONObject[]>([])
+	const stateRows = ref<UTSJSONObject[]>([])
+	const defineRows = ref<UTSJSONObject[]>([])
+	const stuckNodeRows = ref<UTSJSONObject[]>([])
+	const stuckApproverRows = ref<UTSJSONObject[]>([])
+	const pendingCount = ref<number>(6)
+	// 用户 id→姓名映射（stuckApprover 等维度的 key 是雪花 id、后端 label 恒空，
+	// 契约 12 §3：前端查用户表；无权限/失败静默降级显示 id）
+	const userMap = ref<UTSJSONObject>({} as UTSJSONObject)
+
+	const trendBarWidth = computed((): number => {
+		if (trendRange.value == '30d') return 6
+		return 14
+	})
+
+	function pad2(n: number): string {
+		const s = n.toString()
+		if (s.length < 2) return '0' + s
+		return s
+	}
+
+	function fmtDT(d: Date): string {
+		return d.getFullYear().toString() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
+			+ ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds())
+	}
+
+	// trend 的 start/end 是必填（spec 06），按分段算时间窗；月窗从 11 个月前当月 1 号起（跨年由 Date 构造器处理）
+	function trendWindow(): UTSJSONObject {
+		const now = new Date()
+		const end = fmtDT(now)
+		let start: string
+		let granularity = 'day'
+		if (trendRange.value == '12m') {
+			granularity = 'month'
+			const begin = new Date(now.getFullYear(), now.getMonth() - 11, 1, 0, 0, 0)
+			start = fmtDT(begin)
+		} else if (trendRange.value == '30d') {
+			const begin = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0)
+			start = fmtDT(begin)
+		} else {
+			const begin = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0)
+			start = fmtDT(begin)
+		}
+		return { start: start, end: end, granularity: granularity } as UTSJSONObject
+	}
+
+	// goframe 后端 decimal 序列化成字符串（"0.1481"），getNumber 拿 null——兼容解析
+	function numOf(obj: UTSJSONObject, key: string): number | null {
+		const n = obj.getNumber(key)
+		if (n != null) return n
+		const s = obj.getString(key)
+		if (s != null && s.length > 0) {
+			const v = parseFloat(s)
+			if (!isNaN(v)) return v
+		}
+		return null
+	}
+
+	// group 行通用规整：label 后端可能为 null（stuckNode 的 key 即节点名、approver 系 key 是用户 id）
+	function mapRow(item: UTSJSONObject, resolveName: boolean): UTSJSONObject {
+		const key = item.getString('key') ?? ''
+		let label = item.getString('label') ?? ''
+		if (label.length == 0 && resolveName) {
+			const n = userMap.value.getString(key) ?? ''
+			if (n.length > 0) label = n
+		}
+		if (label.length == 0) {
+			label = key
+		}
+		const row = {
+			key: key,
+			label: label,
+			count: item.getNumber('count') ?? 0
+		} as UTSJSONObject
+		// avgDurationSeconds 后端可能为 null（如 state/stuckNode 维度），非空才带，UTS 字面量不放 null
+		const avg = item.getNumber('avgDurationSeconds')
+		if (avg != null) {
+			row['avgDurationSeconds'] = avg
+		}
+		return row
+	}
+
+	function stateLabel(key: string): string {
+		const label = STATE_LABEL.getString(key)
+		if (label != null) {
+			return label
+		}
+		return '状态' + key
+	}
+
+	function fmtHours(): string {
+		const sec = overview.value.getNumber('avgDurationSeconds') ?? 0
+		if (sec == 0) return '--'
+		const h = (sec / 3600.0).toFixed(1)
+		return h + '小时'
+	}
+
+	function fmtPct(rate: number | null): string {
+		if (rate == null) return '--'
+		return (rate * 100).toFixed(1)
+	}
+
+	function fmtOverdue(): string {
+		const n = overview.value.getNumber('overdueTaskCount')
+		if (n == null) return '--'
+		return n.toString()
+	}
+
+	function fmtOnTime(): string {
+		const rate = numOf(overview.value, 'onTimeRate')
+		const overdue = overview.value.getNumber('overdueTaskCount') ?? 0
+		if (overdue == 0 && (rate == null || rate == 0)) return '--'
+		if (rate == null) return '--'
+		return (rate * 100).toFixed(1) + '%'
+	}
+
+	// x 轴短标签：桶列多（30d 每列仅 ~30rpx）时完整日期被 lines:1 截成「20」，
+	// 按 Tab 预裁——7d 显 MM-dd / 30d 显 dd / 12m 显 yy-MM
+	function shortBucketLabel(bucket: string): string {
+		if (trendRange.value == '12m') {
+			return bucket.length >= 7 ? bucket.substring(2, 7) : bucket
+		}
+		if (trendRange.value == '30d') {
+			return bucket.length >= 10 ? bucket.substring(8, 10) : bucket
+		}
+		return bucket.length >= 10 ? bucket.substring(5, 10) : bucket
+	}
+
+	function checkLoadingDone(): void {
+		pendingCount.value--
+		if (pendingCount.value <= 0) {
+			loading.value = false
 		}
 	}
+
+	function loadUserMap(): void {
+		userSelect({ pageNum: 1, pageSize: 200 } as UTSJSONObject).then((res) => {
+			let rows = res as UTSJSONObject[]
+			if (rows == null) {
+				return
+			}
+			const map = {} as UTSJSONObject
+			for (let i = 0; i < rows.length; i++) {
+				const id = rows[i].getString('value') ?? ''
+				const name = rows[i].getString('label') ?? ''
+				if (id.length > 0 && name.length > 0) {
+					map[id] = name
+				}
+			}
+			userMap.value = map
+		}).catch((_e) => {
+			// 查不到用户表就显示 id，不阻塞页面
+		})
+	}
+
+	function loadOverview(): void {
+		statsOverview({} as UTSJSONObject).then((res) => {
+			overview.value = res as UTSJSONObject
+			// 字符串 rate 原地回填为数值，模板 getNumber 才能取到
+			const rr = numOf(overview.value, 'rejectRate')
+			if (rr != null) overview.value['rejectRate'] = rr
+			const cr = numOf(overview.value, 'countersignRate')
+			if (cr != null) overview.value['countersignRate'] = cr
+		}).catch((_e) => {}).finally(() => {
+			checkLoadingDone()
+		})
+	}
+
+	function loadTrend(): void {
+		statsTrend(trendWindow()).then((res) => {
+			const arr = res as UTSJSONObject[]
+			const out: UTSJSONObject[] = []
+			if (arr != null) {
+				for (let i = 0; i < arr.length; i++) {
+					const item = arr[i]
+					out.push({
+						label: shortBucketLabel(item.getString('bucket') ?? ''),
+						a: item.getNumber('started') ?? 0,
+						b: item.getNumber('finished') ?? 0
+					} as UTSJSONObject)
+				}
+			}
+			trendBuckets.value = out
+		}).catch((_e) => {}).finally(() => {
+			checkLoadingDone()
+		})
+	}
+
+	function loadGroupState(): void {
+		statsGroup({ dimension: 'state' } as UTSJSONObject).then((res) => {
+			const arr = res as UTSJSONObject[]
+			const out: UTSJSONObject[] = []
+			if (arr != null) {
+				for (let i = 0; i < arr.length; i++) {
+					const item = arr[i]
+					const key = item.getString('key') ?? ''
+					out.push({
+						label: stateLabel(key),
+						count: item.getNumber('count') ?? 0
+					} as UTSJSONObject)
+				}
+			}
+			stateRows.value = out
+		}).catch((_e) => {}).finally(() => {
+			checkLoadingDone()
+		})
+	}
+
+	function loadGroupDefine(): void {
+		statsGroup({ dimension: 'define' } as UTSJSONObject).then((res) => {
+			const arr = res as UTSJSONObject[]
+			const out: UTSJSONObject[] = []
+			if (arr != null) {
+				for (let i = 0; i < arr.length; i++) {
+					out.push(mapRow(arr[i], false))
+				}
+			}
+			defineRows.value = out
+		}).catch((_e) => {}).finally(() => {
+			checkLoadingDone()
+		})
+	}
+
+	function loadGroupStuckNode(): void {
+		statsGroup({ dimension: 'stuckNode' } as UTSJSONObject).then((res) => {
+			const arr = res as UTSJSONObject[]
+			const out: UTSJSONObject[] = []
+			if (arr != null) {
+				for (let i = 0; i < arr.length; i++) {
+					out.push(mapRow(arr[i], false))
+				}
+			}
+			stuckNodeRows.value = out
+		}).catch((_e) => {}).finally(() => {
+			checkLoadingDone()
+		})
+	}
+
+	function loadGroupStuckApprover(): void {
+		statsGroup({ dimension: 'stuckApprover' } as UTSJSONObject).then((res) => {
+			const arr = res as UTSJSONObject[]
+			const out: UTSJSONObject[] = []
+			if (arr != null) {
+				for (let i = 0; i < arr.length; i++) {
+					out.push(mapRow(arr[i], true))
+				}
+			}
+			stuckApproverRows.value = out
+		}).catch((_e) => {}).finally(() => {
+			checkLoadingDone()
+		})
+	}
+
+	function switchTrend(range: string): void {
+		trendRange.value = range
+		loadTrend()
+	}
+
+	function handleRefresherrefresh(): void {
+		refresherTriggered.value = true
+		pendingCount.value = 6
+		loading.value = true
+		loadUserMap()
+		loadOverview()
+		loadTrend()
+		loadGroupState()
+		loadGroupDefine()
+		loadGroupStuckNode()
+		loadGroupStuckApprover()
+		setTimeout(() => {
+			refresherTriggered.value = false
+		}, 800)
+	}
+
+	onShow(() => {
+		loading.value = true
+		loadUserMap()
+		loadOverview()
+		loadTrend()
+		loadGroupState()
+		loadGroupDefine()
+		loadGroupStuckNode()
+		loadGroupStuckApprover()
+	})
 </script>
 
 <style lang="less">

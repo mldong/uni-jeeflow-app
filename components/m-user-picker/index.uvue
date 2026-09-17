@@ -41,115 +41,107 @@
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
 	/**
 	 * 通用选人/选项弹层（m-user-picker）
 	 * 底部弹层 + 滚动列表，单选 radio / 多选 checkbox；
 	 * 替代 uni.showActionSheet（itemList 过多时截断且不可滚动）。
 	 * 用途：任务办理「指定下一节点处理人 / 抄送」（对齐 vben UserSelect 多选）、会签加签。
 	 */
-	export default {
-		name: "m-user-picker",
-		props: {
-			visible: {
-				type: Boolean,
-				default: false
-			},
-			title: {
-				type: String,
-				default: '请选择'
-			},
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	type Props = {
+		visible?: boolean,
+		title?: string,
 		// 选项 [{label, value, desc?}]（desc=部门名等次要信息，userPage 源才有）
-		options: {
-			type: Array as PropType<UTSJSONObject[]>,
-			default: [] as UTSJSONObject[]
-		},
+		options?: UTSJSONObject[],
 		// 已选 value 集合（回显）
-		selected: {
-			type: Array as PropType<string[]>,
-			default: [] as string[]
-		},
-		multiple: {
-			type: Boolean,
-			default: false
+		selected?: string[],
+		multiple?: boolean
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		visible: false,
+		title: '请选择',
+		options: (): UTSJSONObject[] => [] as UTSJSONObject[],
+		selected: (): string[] => [] as string[],
+		multiple: false
+	})
+
+	const emit = defineEmits(['update:visible', 'ok'])
+
+	const innerSel = ref<string[]>([])
+	const keyword = ref('')
+
+	// 关键字本地过滤（姓名/部门包含匹配，大小写不敏感；v-for 迭代 props 数组需 computed 中转，error19 同款）
+	const filteredOptions = computed((): UTSJSONObject[] => {
+		const kw = keyword.value.toLowerCase()
+		if (kw.length == 0) {
+			return props.options
 		}
-	},
-	emits: ['update:visible', 'ok'],
-	data() {
-		return {
-			innerSel: [] as string[],
-			keyword: ''
-		};
-	},
-	computed: {
-		// 关键字本地过滤（姓名/部门包含匹配，大小写不敏感；v-for 迭代 props 数组需 computed 中转，error19 同款）
-		filteredOptions(): UTSJSONObject[] {
-			const kw = this.keyword.toLowerCase()
-			if (kw.length == 0) {
-				return this.options
-			}
-			const out: UTSJSONObject[] = []
-			for (let i = 0; i < this.options.length; i++) {
-				const o = this.options[i]
-				const label = (o.getString('label') ?? '').toLowerCase()
-				const desc = (o.getString('desc') ?? '').toLowerCase()
-				if (label.indexOf(kw) >= 0 || desc.indexOf(kw) >= 0) {
-					out.push(o)
-				}
-			}
-			return out
-		}
-	},
-	watch: {
-		// 每次打开从 props 重建内部选中态，避免上次选择的残留；关键字一并清空
-		visible(n: Boolean) {
-			if (n == true) {
-				const arr: string[] = []
-				for (let i = 0; i < this.selected.length; i++) {
-					arr.push(this.selected[i])
-				}
-				this.innerSel = arr
-				this.keyword = ''
+		const out: UTSJSONObject[] = []
+		for (let i = 0; i < props.options.length; i++) {
+			const o = props.options[i]
+			const label = (o.getString('label') ?? '').toLowerCase()
+			const desc = (o.getString('desc') ?? '').toLowerCase()
+			if (label.indexOf(kw) >= 0 || desc.indexOf(kw) >= 0) {
+				out.push(o)
 			}
 		}
-	},
-	methods: {
-		// 模板内 $event 是 Any，参数收 any 后内部断言（error17，同 m-schema-form）
-		onSearch(event: any) {
-			const e = event as UniInputEvent
-			this.keyword = e.detail.value
-		},
-			optionValue(o: UTSJSONObject): string {
-				return o.getString('value') ?? ''
-			},
-			isSel(o: UTSJSONObject): boolean {
-				const v = this.optionValue(o)
-				for (let i = 0; i < this.innerSel.length; i++) {
-					if (this.innerSel[i] == v) {
-						return true
-					}
-				}
-				return false
-			},
-			// 模板内 $event 是 Any，参数收 any 后内部断言（error17，同 m-schema-form）
-			onRadioChange(event: any) {
-				const e = event as UniRadioGroupChangeEvent
-				const arr: string[] = []
-				arr.push(e.detail.value)
-				this.innerSel = arr
-			},
-			onCheckboxChange(event: any) {
-				const e = event as UniCheckboxGroupChangeEvent
-				this.innerSel = e.detail.value
-			},
-			onCancel() {
-				this.$emit('update:visible', false)
-			},
-			onOk() {
-				this.$emit('ok', this.innerSel)
-				this.$emit('update:visible', false)
+		return out
+	})
+
+	// 每次打开从 props 重建内部选中态，避免上次选择的残留；关键字一并清空
+	watch((): boolean => props.visible, (n: boolean) => {
+		if (n == true) {
+			const arr: string[] = []
+			for (let i = 0; i < props.selected.length; i++) {
+				arr.push(props.selected[i])
+			}
+			innerSel.value = arr
+			keyword.value = ''
+		}
+	})
+
+	// 模板内 $event 是 Any，参数收 any 后内部断言（error17，同 m-schema-form）
+	function onSearch(event: any) {
+		const e = event as UniInputEvent
+		keyword.value = e.detail.value
+	}
+
+	function optionValue(o: UTSJSONObject): string {
+		return o.getString('value') ?? ''
+	}
+
+	function isSel(o: UTSJSONObject): boolean {
+		const v = optionValue(o)
+		for (let i = 0; i < innerSel.value.length; i++) {
+			if (innerSel.value[i] == v) {
+				return true
 			}
 		}
+		return false
+	}
+
+	// 模板内 $event 是 Any，参数收 any 后内部断言（error17，同 m-schema-form）
+	function onRadioChange(event: any) {
+		const e = event as UniRadioGroupChangeEvent
+		const arr: string[] = []
+		arr.push(e.detail.value)
+		innerSel.value = arr
+	}
+
+	function onCheckboxChange(event: any) {
+		const e = event as UniCheckboxGroupChangeEvent
+		innerSel.value = e.detail.value
+	}
+
+	function onCancel() {
+		emit('update:visible', false)
+	}
+
+	function onOk() {
+		emit('ok', innerSel.value)
+		emit('update:visible', false)
 	}
 </script>
 

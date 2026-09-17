@@ -27,96 +27,95 @@
 		<!-- #endif -->
 	</view>
 </template>
-<script lang="uts">
+<script setup lang="uts">
 	import { processDefinePage } from '@/api/workflow.uts'
+	import { $strUtil } from '@/util/str_util'
 
-	export default {
-		data() {
-			return {
-				pageNum: 1,
-				pageSize: 20,
-				recordCount: 0,
-				defines: [] as UTSJSONObject[],
-				refresherTriggered: false,
-				loading: false
-			};
-		},
-		onLoad() {
-			this.requestData()
-		},
-		methods: {
-			handleRefresherrefresh() {
-				this.refresherTriggered = true
-				this.pageNum = 1
-				this.requestData().finally(() => {
-					this.refresherTriggered = false
-				})
-			},
-			loadMore() {
-				if (this.defines.length >= this.recordCount || this.loading) {
-					return
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	const pageNum = ref<number>(1)
+	const pageSize = ref<number>(20)
+	const recordCount = ref<number>(0)
+	const defines = ref<UTSJSONObject[]>([])
+	const refresherTriggered = ref(false)
+	const loading = ref(false)
+
+	function requestData(): Promise<any> {
+		loading.value = true
+		return new Promise<any>((resolve, reject) => {
+			uni.showLoading({ title: '加载中', mask: true })
+			processDefinePage({
+				pageNum: pageNum.value,
+				pageSize: pageSize.value
+			} as UTSJSONObject).then((res) => {
+				const data = res as UTSJSONObject
+				recordCount.value = data.getNumber('recordCount') ?? 0
+				const rows = data.getArray('rows')
+				if (pageNum.value == 1) {
+					defines.value = [] as UTSJSONObject[]
 				}
-				this.pageNum++
-				this.requestData()
-			},
-			requestData(): Promise<any> {
-				this.loading = true
-				return new Promise<any>((resolve, reject) => {
-					uni.showLoading({ title: '加载中', mask: true })
-					processDefinePage({
-						pageNum: this.pageNum,
-						pageSize: this.pageSize
-					} as UTSJSONObject).then((res) => {
-						const data = res as UTSJSONObject
-						this.recordCount = data.getNumber('recordCount') ?? 0
-						const rows = data.getArray('rows')
-						if (this.pageNum == 1) {
-							this.defines = [] as UTSJSONObject[]
+				if (rows != null) {
+					for (let i = 0; i < rows.length; i++) {
+						const row = rows[i] as UTSJSONObject
+						// 只展示启用（state==1）
+						if ((row.getNumber('state') ?? 0) != 1) {
+							continue
 						}
-						if (rows != null) {
-							for (let i = 0; i < rows.length; i++) {
-								const row = rows[i] as UTSJSONObject
-								// 只展示启用（state==1）
-								if ((row.getNumber('state') ?? 0) != 1) {
-									continue
-								}
-								// 同名流程去重，保留最高版本
-								const name = row.getString('name') ?? ''
-								let existIdx = -1
-								for (let j = 0; j < this.defines.length; j++) {
-									if ((this.defines[j].getString('name') ?? '') == name) {
-										existIdx = j
-										break
-									}
-								}
-								if (existIdx >= 0) {
-									const existV = this.defines[existIdx].getNumber('version') ?? 0
-									if ((row.getNumber('version') ?? 0) > existV) {
-										this.defines[existIdx] = row
-									}
-								} else {
-									this.defines.push(row)
-								}
+						// 同名流程去重，保留最高版本
+						const name = row.getString('name') ?? ''
+						let existIdx = -1
+						for (let j = 0; j < defines.value.length; j++) {
+							if ((defines.value[j].getString('name') ?? '') == name) {
+								existIdx = j
+								break
 							}
 						}
-						resolve(true)
-					}).catch((err) => {
-						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
-						reject(err)
-					}).finally(() => {
-						uni.hideLoading()
-						this.loading = false
-					})
-				})
-			},
-			onTapDefine(item: UTSJSONObject) {
-				const id = item.getString('id') ?? ''
-				uni.navigateTo({
-					url: '/pages/workflow/start-form?defineId=' + id
-				})
-			}
-		}
+						if (existIdx >= 0) {
+							const existV = defines.value[existIdx].getNumber('version') ?? 0
+							if ((row.getNumber('version') ?? 0) > existV) {
+								defines.value[existIdx] = row
+							}
+						} else {
+							defines.value.push(row)
+						}
+					}
+				}
+				resolve(true)
+			}).catch((err) => {
+				uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+				reject(err)
+			}).finally(() => {
+				uni.hideLoading()
+				loading.value = false
+			})
+		})
 	}
+
+	function handleRefresherrefresh(): void {
+		refresherTriggered.value = true
+		pageNum.value = 1
+		requestData().finally(() => {
+			refresherTriggered.value = false
+		})
+	}
+
+	function loadMore(): void {
+		if (defines.value.length >= recordCount.value || loading.value) {
+			return
+		}
+		pageNum.value++
+		requestData()
+	}
+
+	function onTapDefine(item: UTSJSONObject): void {
+		const id = item.getString('id') ?? ''
+		uni.navigateTo({
+			url: '/pages/workflow/start-form?defineId=' + id
+		})
+	}
+
+	onLoad(() => {
+		requestData()
+	})
 </script>
 <style lang="less">
 	.m-define-list {

@@ -94,7 +94,7 @@
 	</view>
 </template>
 
-<script lang="uts">
+<script setup lang="uts">
 	/**
 	 * 流程图 · 原生渲染（替代 webview 方案）
 	 * graph（jsonObject）经 graphToTree 转树后由 m-flow-tree 递归渲染；
@@ -105,292 +105,274 @@
 	import { graphToTree, FlowNode } from '@/util/flow_converter.uts'
 	import mFlowTree from './m-flow-tree.uvue'
 
-	export default {
-		name: "m-flow-native",
-		components: {
-			mFlowTree
-		},
-		props: {
-			graph: {
-				type: Object as PropType<UTSJSONObject | null>,
-				default: null
-			},
-			// processInstance/highLight 完整响应（含 nodeProgress）
-			highLight: {
-				type: Object as PropType<UTSJSONObject | null>,
-				default: null
-			},
-			// 兼容旧调用（无 highLight 对象时兜底）
-			activeNames: {
-				type: Array as PropType<string[]>,
-				default: [] as string[]
-			},
-			historyNames: {
-				type: Array as PropType<string[]>,
-				default: [] as string[]
-			},
-			historyEdges: {
-				type: Array as PropType<string[]>,
-				default: [] as string[]
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	type Props = {
+		graph?: UTSJSONObject | null,
+		// processInstance/highLight 完整响应（含 nodeProgress）
+		highLight?: UTSJSONObject | null,
+		// 兼容旧调用（无 highLight 对象时兜底）
+		activeNames?: string[],
+		historyNames?: string[],
+		historyEdges?: string[]
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		graph: null,
+		highLight: null,
+		activeNames: (): string[] => [] as string[],
+		historyNames: (): string[] => [] as string[],
+		historyEdges: (): string[] => [] as string[]
+	})
+	const fullscreen = ref<boolean>(false)
+	// 缩放 0.5~2.0（0.2 步进）
+	const scale = ref<number>(1.0)
+	// 打开全屏前的缩放（关闭时恢复）
+	const prevScale = ref<number>(1.0)
+	const statusBarHeight = ref<number>(20)
+	// rpx → px 换算（750rpx = 屏宽）
+	const rpxScale = ref<number>(0.5)
+	// 内嵌卡片内容区宽度（rpx，测工具条行得到；canvas 宽 = 它，100% 时严格居中）
+	const cardW = ref<number>(0)
+	// 内容未缩放高度（rpx，测量值；宽度纯算术不测，避免 stretch 正反馈）
+	const contentH = ref<number>(0)
+	// 双指捏合状态
+	const pinchDist = ref<number>(0)
+	const pinchStartScale = ref<number>(1.0)
+
+	// ── 函数区（UTS setup 内声明须先于引用，故整体前置） ──
+	// ── 内容尺寸测量（rpx，未缩放基准；量不到时 sizer 用兜底尺寸） ──
+	// boundingClientRect 返回的是 transform 后的 px，需同时除以 scale 与 rpxScale
+	// 只量高度（canvas）+ 卡片宽（工具条行）；宽度纯算术，不量 canvas（stretch 正反馈）
+	// 递归树跨多帧渲染：单次 nextTick 测量会拿到未长全的高度（sizer 矮于内容 → 图内滚不动、
+	// 底部裁剪），故带重试增量测量，取历史最大值（v0.1.5 实弹修复）
+	function measureCanvas(retry: number): void {
+		const s = scale.value
+		uni.createSelectorQuery().select('.mfn-canvas').boundingClientRect((rect) => {
+			const node = rect as NodeInfo
+			const hPx = node.height ?? 0
+			const baseH = s > 0 ? hPx / s / rpxScale.value : 0
+			if (baseH > contentH.value) {
+				contentH.value = baseH
 			}
-		},
-		data() {
-			return {
-				fullscreen: false,
-				// 缩放 0.5~2.0（0.2 步进）
-				scale: 1.0,
-				// 打开全屏前的缩放（关闭时恢复）
-				prevScale: 1.0,
-				statusBarHeight: 20,
-				// rpx → px 换算（750rpx = 屏宽）
-				rpxScale: 0.5,
-				// 内嵌卡片内容区宽度（rpx，测工具条行得到；canvas 宽 = 它，100% 时严格居中）
-				cardW: 0,
-				// 内容未缩放高度（rpx，测量值；宽度纯算术不测，避免 stretch 正反馈）
-				contentH: 0,
-				// 双指捏合状态
-				pinchDist: 0,
-				pinchStartScale: 1.0
-			};
-		},
-		computed: {
-			// graph/highLight 任一到位即同步转树
-			tree(): FlowNode | null {
-				const g = this.graph
-				if (g == null) return null
-				const _hl = this.highLight
-				return graphToTree(g!)
-			},
-			hlActive(): string[] {
-				const hl = this.highLight
-				if (hl == null) return [] as string[]
-				const arr = hl!.getArray('activeNodeNames')
-				if (arr == null) return [] as string[]
-				const out: string[] = []
-				for (let i = 0; i < arr!.length; i++) {
-					const v = arr![i]
-					if (v != null) out.push(v.toString())
-				}
-				return out
-			},
-			hlHistory(): string[] {
-				const hl = this.highLight
-				if (hl == null) return [] as string[]
-				const arr = hl!.getArray('historyNodeNames')
-				if (arr == null) return [] as string[]
-				const out: string[] = []
-				for (let i = 0; i < arr!.length; i++) {
-					const v = arr![i]
-					if (v != null) out.push(v.toString())
-				}
-				return out
-			},
-			// 高亮节点 id 最终来源：整份 highLight 优先，兜底独立数组 prop
-			// （不能与 prop 同名：uvue 编译进同一 Kotlin 类会撞名）
-			finalActive(): string[] {
-				const a = this.hlActive
-				if (a.length > 0) return a
-				return this.activeNames
-			},
-			finalHistory(): string[] {
-				const h = this.hlHistory
-				if (h.length > 0) return h
-				return this.historyNames
-			},
-			zoomPercent(): string {
-				return Math.round(this.scale * 100).toString() + '%'
-			},
-			// 内容未缩放宽度（rpx，纯算术 + canvas 左右 padding 80）
-			// 不测量：canvas 在 scroll/sizer 里会被 stretch 撑宽，测出来会污染自身（正反馈）
-			baseW(): number {
-				const t = this.tree
-				const w = t == null ? 300 : this.maxBranchWidth(t!)
-				return w + 80
-			},
-			// canvas 宽度（rpx，未缩放）：内嵌 = 卡片实测宽（保证 100% 严格居中）；全屏 = max(750, 内容宽)
-			baseCanvasW(): number {
-				if (this.fullscreen) {
-					const w = this.baseW
-					return w > 750 ? w : 750
-				}
-				const cw = this.cardW
-				if (cw <= 0) return this.baseW
-				const bw = this.baseW
-				return cw > bw ? cw : bw
-			},
-			// canvas 内联样式：显式宽度 + transform（transformOrigin top left）
-			canvasStyle(): UTSJSONObject {
-				const w = this.baseCanvasW
-				return {
-					width: w.toFixed(0) + 'rpx',
-					transform: 'scale(' + this.scale + ')',
-					transformOrigin: 'top left'
-				} as UTSJSONObject
-			},
-			// 内嵌滚动视口高度：内容高 × 缩放，封顶 1200rpx（未测得时给兜底高度）
-			embedScrollH(): string {
-				const h = this.contentH * this.scale
-				if (h <= 0) return '400rpx'
-				const capped = h > 1200 ? 1200 : h
-				return capped.toFixed(0) + 'rpx'
-			},
-			// sizer：撑出"缩放后"可滚动区域（transform 不改变布局尺寸，必须显式占位）
-			sizerStyle(): UTSJSONObject {
-				const w = this.baseCanvasW * this.scale
-				const h = this.contentH * this.scale
-				const ws = w > 0 ? w.toFixed(0) + 'rpx' : '750rpx'
-				const hs = h > 0 ? h.toFixed(0) + 'rpx' : '400rpx'
-				return { width: ws, height: hs } as UTSJSONObject
-			},
-			// 全屏 sizer（px）
-			sizerStylePx(): UTSJSONObject {
-				const w = this.baseCanvasW * this.rpxScale * this.scale
-				const h = this.contentH * this.rpxScale * this.scale
-				const ws = w > 0 ? w.toFixed(1) + 'px' : '100%'
-				const hs = h > 0 ? h.toFixed(1) + 'px' : '100%'
-				return { width: ws, height: hs } as UTSJSONObject
-			}
-		},
-		watch: {
-			graph(_n) {
-				// 数据到位/变化后重测内容尺寸（缩放视口依赖）
-				this.$nextTick(() => {
-					this.measureCanvas(0)
-				})
-			}
-		},
-		mounted() {
-			try {
-				const info = uni.getSystemInfoSync()
-				this.statusBarHeight = info.statusBarHeight
-				this.rpxScale = info.windowWidth / 750
-			} catch (e) {
-				// 保持默认值
-			}
-			this.$nextTick(() => {
-				this.measureCanvas(0)
-			})
-		},
-		methods: {
-			// ── 缩放 ──
-			zoomIn() {
-				this.scale = this.clampScale(this.scale + 0.2)
-			},
-			zoomOut() {
-				this.scale = this.clampScale(this.scale - 0.2)
-			},
-			clampScale(s: number): number {
-				if (s < 0.5) s = 0.5
-				if (s > 2.0) s = 2.0
-				// 0.2 步进取整，避免浮点漂移
-				return Math.round(s * 10) / 10
-			},
-			// ── 全屏 ──
-			openFullscreen() {
-				this.prevScale = this.scale
-				this.scale = 1.0
-				this.fullscreen = true
+			if (retry < 4) {
 				setTimeout(() => {
-					this.measureCanvas(0)
-				}, 180)
-			},
-			closeFullscreen() {
-				this.fullscreen = false
-				this.scale = this.prevScale
-				setTimeout(() => {
-					this.measureCanvas(0)
-				}, 180)
-			},
-			// ── 内容尺寸测量（rpx，未缩放基准；量不到时 sizer 用兜底尺寸） ──
-			// boundingClientRect 返回的是 transform 后的 px，需同时除以 scale 与 rpxScale
-			// 只量高度（canvas）+ 卡片宽（工具条行）；宽度纯算术，不量 canvas（stretch 正反馈）
-			// 递归树跨多帧渲染：单次 nextTick 测量会拿到未长全的高度（sizer 矮于内容 → 图内滚不动、
-			// 底部裁剪），故带重试增量测量，取历史最大值（v0.1.5 实弹修复）
-			measureCanvas(retry: number) {
-				const self = this
-				const s = this.scale
-				uni.createSelectorQuery().select('.mfn-canvas').boundingClientRect((rect) => {
-					const node = rect as NodeInfo
-					const hPx = node.height ?? 0
-					const baseH = s > 0 ? hPx / s / self.rpxScale : 0
-					if (baseH > self.contentH) {
-						self.contentH = baseH
-					}
-					if (retry < 4) {
-						setTimeout(() => {
-							self.measureCanvas(retry + 1)
-						}, 250)
-					}
-				}).exec()
-				uni.createSelectorQuery().select('.mfn-toolbar-row').boundingClientRect((rect) => {
-					const node = rect as NodeInfo
-					const tPx = node.width ?? 0
-					if (tPx > 0) {
-						self.cardW = tPx / self.rpxScale
-					}
-				}).exec()
-			},
-			// 分支区最宽（rpx，递归）：普通节点 300；分支容器 = max(列数×320, 各分支子树最宽)
-			maxBranchWidth(n: FlowNode): number {
-				const kind = n.kind()
-				if (kind == 'condition' || kind == 'fork') {
-					const bs = n.branches
-					let m = bs.length * 320
-					for (let i = 0; i < bs.length; i++) {
-						const b = bs[i]
-						const c = b.children
-						if (c != null) {
-							const cw = this.maxBranchWidth(c!)
-							if (cw > m) m = cw
-						}
-					}
-					return m
-				}
-				const c = n.children
+					measureCanvas(retry + 1)
+				}, 250)
+			}
+		}).exec()
+		uni.createSelectorQuery().select('.mfn-toolbar-row').boundingClientRect((rect) => {
+			const node = rect as NodeInfo
+			const tPx = node.width ?? 0
+			if (tPx > 0) {
+				cardW.value = tPx / rpxScale.value
+			}
+		}).exec()
+	}
+	// 分支区最宽（rpx，递归）：普通节点 300；分支容器 = max(列数×320, 各分支子树最宽)
+	function maxBranchWidth(n: FlowNode): number {
+		const kind = n.kind()
+		if (kind == 'condition' || kind == 'fork') {
+			const bs = n.branches
+			let m = bs.length * 320
+			for (let i = 0; i < bs.length; i++) {
+				const b = bs[i]
+				const c = b.children
 				if (c != null) {
-					const cw = this.maxBranchWidth(c!)
-					if (cw > 300) return cw
+					const cw = maxBranchWidth(c!)
+					if (cw > m) m = cw
 				}
-				const jc = n.joinChildren
-				if (jc != null) {
-					const jw = this.maxBranchWidth(jc!)
-					if (jw > 300) return jw
-				}
-				return 300
-			},
-			// ── 双指捏合（仅全屏） ──
-			touchDist(e: TouchEvent): number {
-				const ts = e.touches
-				if (ts.length < 2) return 0
-				const x1 = ts[0].clientX
-				const y1 = ts[0].clientY
-				const x2 = ts[1].clientX
-				const y2 = ts[1].clientY
-				const dx = x1 - x2
-				const dy = y1 - y2
-				return Math.sqrt(dx * dx + dy * dy)
-			},
-			onTouchStart(e: TouchEvent) {
-				if (e.touches.length >= 2) {
-					this.pinchDist = this.touchDist(e)
-					this.pinchStartScale = this.scale
-				}
-			},
-			onTouchMove(e: TouchEvent) {
-				if (e.touches.length >= 2 && this.pinchDist > 0) {
-					const d = this.touchDist(e)
-					if (d > 0) {
-						this.scale = this.clampScale(this.pinchStartScale * d / this.pinchDist)
-					}
-				}
-			},
-			onTouchEnd(e: TouchEvent) {
-				if (e.touches.length < 2) {
-					this.pinchDist = 0
-				}
+			}
+			return m
+		}
+		const c = n.children
+		if (c != null) {
+			const cw = maxBranchWidth(c!)
+			if (cw > 300) return cw
+		}
+		const jc = n.joinChildren
+		if (jc != null) {
+			const jw = maxBranchWidth(jc!)
+			if (jw > 300) return jw
+		}
+		return 300
+	}
+	// ── 缩放 ──
+	function clampScale(s: number): number {
+		if (s < 0.5) s = 0.5
+		if (s > 2.0) s = 2.0
+		// 0.2 步进取整，避免浮点漂移
+		return Math.round(s * 10) / 10
+	}
+	function zoomIn(): void {
+		scale.value = clampScale(scale.value + 0.2)
+	}
+	function zoomOut(): void {
+		scale.value = clampScale(scale.value - 0.2)
+	}
+	// ── 全屏 ──
+	function openFullscreen(): void {
+		prevScale.value = scale.value
+		scale.value = 1.0
+		fullscreen.value = true
+		setTimeout(() => {
+			measureCanvas(0)
+		}, 180)
+	}
+	function closeFullscreen(): void {
+		fullscreen.value = false
+		scale.value = prevScale.value
+		setTimeout(() => {
+			measureCanvas(0)
+		}, 180)
+	}
+	// ── 双指捏合（仅全屏） ──
+	function touchDist(e: TouchEvent): number {
+		const ts = e.touches
+		if (ts.length < 2) return 0
+		const x1 = ts[0].clientX
+		const y1 = ts[0].clientY
+		const x2 = ts[1].clientX
+		const y2 = ts[1].clientY
+		const dx = x1 - x2
+		const dy = y1 - y2
+		return Math.sqrt(dx * dx + dy * dy)
+	}
+	function onTouchStart(e: TouchEvent): void {
+		if (e.touches.length >= 2) {
+			pinchDist.value = touchDist(e)
+			pinchStartScale.value = scale.value
+		}
+	}
+	function onTouchMove(e: TouchEvent): void {
+		if (e.touches.length >= 2 && pinchDist.value > 0) {
+			const d = touchDist(e)
+			if (d > 0) {
+				scale.value = clampScale(pinchStartScale.value * d / pinchDist.value)
 			}
 		}
 	}
+	function onTouchEnd(e: TouchEvent): void {
+		if (e.touches.length < 2) {
+			pinchDist.value = 0
+		}
+	}
+
+	// graph/highLight 任一到位即同步转树
+	const tree = computed((): FlowNode | null => {
+		const g = props.graph
+		if (g == null) return null
+		const _hl = props.highLight
+		return graphToTree(g!)
+	})
+	const hlActive = computed((): string[] => {
+		const hl = props.highLight
+		if (hl == null) return [] as string[]
+		const arr = hl!.getArray('activeNodeNames')
+		if (arr == null) return [] as string[]
+		const out: string[] = []
+		for (let i = 0; i < arr!.length; i++) {
+			const v = arr![i]
+			if (v != null) out.push(v.toString())
+		}
+		return out
+	})
+	const hlHistory = computed((): string[] => {
+		const hl = props.highLight
+		if (hl == null) return [] as string[]
+		const arr = hl!.getArray('historyNodeNames')
+		if (arr == null) return [] as string[]
+		const out: string[] = []
+		for (let i = 0; i < arr!.length; i++) {
+			const v = arr![i]
+			if (v != null) out.push(v.toString())
+		}
+		return out
+	})
+	// 高亮节点 id 最终来源：整份 highLight 优先，兜底独立数组 prop
+	// （不能与 prop 同名：uvue 编译进同一 Kotlin 类会撞名）
+	const finalActive = computed((): string[] => {
+		const a = hlActive.value
+		if (a.length > 0) return a
+		return props.activeNames
+	})
+	const finalHistory = computed((): string[] => {
+		const h = hlHistory.value
+		if (h.length > 0) return h
+		return props.historyNames
+	})
+	const zoomPercent = computed((): string => {
+		return Math.round(scale.value * 100).toString() + '%'
+	})
+	// 内容未缩放宽度（rpx，纯算术 + canvas 左右 padding 80）
+	// 不测量：canvas 在 scroll/sizer 里会被 stretch 撑宽，测出来会污染自身（正反馈）
+	const baseW = computed((): number => {
+		const t = tree.value
+		const w = t == null ? 300 : maxBranchWidth(t!)
+		return w + 80
+	})
+	// canvas 宽度（rpx，未缩放）：内嵌 = 卡片实测宽（保证 100% 严格居中）；全屏 = max(750, 内容宽)
+	const baseCanvasW = computed((): number => {
+		if (fullscreen.value) {
+			const w = baseW.value
+			return w > 750 ? w : 750
+		}
+		const cw = cardW.value
+		if (cw <= 0) return baseW.value
+		const bw = baseW.value
+		return cw > bw ? cw : bw
+	})
+	// canvas 内联样式：显式宽度 + transform（transformOrigin top left）
+	const canvasStyle = computed((): UTSJSONObject => {
+		const w = baseCanvasW.value
+		return {
+			width: w.toFixed(0) + 'rpx',
+			transform: 'scale(' + scale.value + ')',
+			transformOrigin: 'top left'
+		} as UTSJSONObject
+	})
+	// 内嵌滚动视口高度：内容高 × 缩放，封顶 1200rpx（未测得时给兜底高度）
+	const embedScrollH = computed((): string => {
+		const h = contentH.value * scale.value
+		if (h <= 0) return '400rpx'
+		const capped = h > 1200 ? 1200 : h
+		return capped.toFixed(0) + 'rpx'
+	})
+	// sizer：撑出"缩放后"可滚动区域（transform 不改变布局尺寸，必须显式占位）
+	const sizerStyle = computed((): UTSJSONObject => {
+		const w = baseCanvasW.value * scale.value
+		const h = contentH.value * scale.value
+		const ws = w > 0 ? w.toFixed(0) + 'rpx' : '750rpx'
+		const hs = h > 0 ? h.toFixed(0) + 'rpx' : '400rpx'
+		return { width: ws, height: hs } as UTSJSONObject
+	})
+	// 全屏 sizer（px）
+	const sizerStylePx = computed((): UTSJSONObject => {
+		const w = baseCanvasW.value * rpxScale.value * scale.value
+		const h = contentH.value * rpxScale.value * scale.value
+		const ws = w > 0 ? w.toFixed(1) + 'px' : '100%'
+		const hs = h > 0 ? h.toFixed(1) + 'px' : '100%'
+		return { width: ws, height: hs } as UTSJSONObject
+	})
+
+	// graph 变化 → tree 重算 → 触发重测（watch 直接挂 ref/computed，可空 getter 重载在 UTS 下解析失败）
+	watch(tree, (_n : FlowNode | null, _o : FlowNode | null) : void => {
+		// 数据到位/变化后重测内容尺寸（缩放视口依赖）
+		nextTick(() => {
+			measureCanvas(0)
+		})
+	})
+	onMounted(() => {
+		try {
+			const info = uni.getSystemInfoSync()
+			statusBarHeight.value = info.statusBarHeight
+			rpxScale.value = info.windowWidth / 750
+		} catch (e) {
+			// 保持默认值
+		}
+		nextTick(() => {
+			measureCanvas(0)
+		})
+	})
 </script>
 
 <style lang="less">

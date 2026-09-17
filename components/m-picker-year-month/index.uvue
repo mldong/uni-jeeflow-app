@@ -22,186 +22,183 @@
 	</view>
 </template>
 
-<script>
-	export default {
-		name:"m-picker-year-month",
-		props:{
-		 visible: {
-			 type: Boolean,
-			 default: false
-		 },
-		 showDay: { // 显示天
-			 type: Boolean,
-			 default: false,
-		 },
-		 choosableFutureTime: { // 可选未来时间
-			 type: Boolean,
-			 default: true
-		 },
-		 value: {
-			 type: String,
-			 default: ''
-		 }
-		},
-		emits:['update:visible', 'update:value', 'ok'],
-		data() {
-			let d = new Date();
-			let _year = d.getFullYear();
-			let _month = d.getMonth() + 1;
-			let _day = d.getDay() + 1
-			return {
-				indicatorStyle: 'height: 50px;',
-				year: _year as Number,
-				month: _month as Number,
-				day: _day as Number,
-				selectYear: _year as Number,
-				selectMonth:_month as Number,
-				selectDay: _day as Number,
-				pickerValue: [] as Array<Number>,
-				pickerWrap: null as UniElement | null,
-			};
-		},
-		computed:{
-			years:():Array<number>=>{
-				const year = new Date().getFullYear()
-				let _years:Array<number> = []
-				for(let i=year-100;i<=year+100;i++){
-					if(!this.choosableFutureTime && i>year) {
-						continue;
-					}
-					_years.push(i)
-				} 
-				return _years;
-			},
-			months:():Array<number>=>{
-				let _months:Array<number> = []
-				const year = new Date().getFullYear()
-				const month = new Date().getMonth() + 1
-				for(let i=1;i<=12;i++){
-					if(!this.choosableFutureTime && this.selectYear == year && i > month) {
-						continue;
-					}
-					_months.push(i)
-				} 
-				return _months;
-			},
-			days:():Array<number>=>{
-			  let year = this.selectYear as number
-			  let month = (this.selectMonth  as number) - 1;
-			  // 创建该月第一天的日期对象
-			  const now = new Date(year, month, 1);
-			  // 获取下个月第一天的日期对象
-			  // 如果是 12 月，则需要增加年份
-			  let nextMonth = new Date(year, month + 1, 1);
-			  // 计算两个日期之间相差的毫秒数
-			  let diff = nextMonth.getTime() - now.getTime();
-			  // 将毫秒数转换为天数
-			  // 一天有 24 * 60 * 60 * 1000 毫秒
-			  let days = Math.floor(diff / (24 * 60 * 60 * 1000));
-			  let daysArray: Array<number> = []
-			  const newYear = new Date().getFullYear()
-			  const newMonth = new Date().getMonth() + 1
-			  const newDay = new Date().getDay() + 1;
-			  // 循环从 1 到 days
-			  for (let i = 1; i <= days; i++) {
-				if(!this.choosableFutureTime && newYear==this.selectYear && newMonth == this.selectMonth && i > newDay) {
-					continue;
-				}
-				daysArray.push(i);
-			  }
-			  return daysArray
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	import { $strUtil } from '@/util/str_util'
+
+	type Props = {
+		visible?: boolean,
+		showDay?: boolean, // 显示天
+		choosableFutureTime?: boolean, // 可选未来时间
+		value?: string
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		visible: false,
+		showDay: false,
+		choosableFutureTime: true,
+		value: ''
+	})
+
+	const emit = defineEmits(['update:visible', 'update:value', 'ok'])
+
+	// data → ref（初值逻辑保持原 data() 写法）
+	let d = new Date();
+	let _year = d.getFullYear();
+	let _month = d.getMonth() + 1;
+	let _day = d.getDay() + 1
+	const indicatorStyle = ref('height: 50px;')
+	const year = ref<Number>(_year as Number)
+	const month = ref<Number>(_month as Number)
+	const day = ref<Number>(_day as Number)
+	const selectYear = ref<Number>(_year as Number)
+	const selectMonth = ref<Number>(_month as Number)
+	const selectDay = ref<Number>(_day as Number)
+	const pickerValue = ref<Array<Number>>([] as Array<Number>)
+	const pickerWrap = ref<UniElement | null>(null)
+
+	// created → setup 顶层执行
+	pickerValue.value = props.showDay ? [100, month.value - 1, day.value - 1] : [100, month.value - 1]
+
+	const years = computed((): Array<number> => {
+		const year = new Date().getFullYear()
+		let _years: Array<number> = []
+		for (let i = year - 100; i <= year + 100; i++) {
+			if (!props.choosableFutureTime && i > year) {
+				continue;
 			}
-		},
-		created(){
-			this.pickerValue = this.showDay?[100,this.month-1,this.day-1]:[100,this.month-1]
-		},
-		mounted() {
-			this.pickerWrap = uni.getElementById('pickerWrap');
-			if(this.visible) {
-				this.openPicker()
+			_years.push(i)
+		}
+		return _years;
+	})
+
+	const months = computed((): Array<number> => {
+		let _months: Array<number> = []
+		const year = new Date().getFullYear()
+		const month = new Date().getMonth() + 1
+		for (let i = 1; i <= 12; i++) {
+			if (!props.choosableFutureTime && selectYear.value == year && i > month) {
+				continue;
+			}
+			_months.push(i)
+		}
+		return _months;
+	})
+
+	const days = computed((): Array<number> => {
+		let year = selectYear.value as number
+		let month = (selectMonth.value as number) - 1;
+		// 创建该月第一天的日期对象
+		const now = new Date(year, month, 1);
+		// 获取下个月第一天的日期对象
+		// 如果是 12 月，则需要增加年份
+		let nextMonth = new Date(year, month + 1, 1);
+		// 计算两个日期之间相差的毫秒数
+		let diff = nextMonth.getTime() - now.getTime();
+		// 将毫秒数转换为天数
+		// 一天有 24 * 60 * 60 * 1000 毫秒
+		let days = Math.floor(diff / (24 * 60 * 60 * 1000));
+		let daysArray: Array<number> = []
+		const newYear = new Date().getFullYear()
+		const newMonth = new Date().getMonth() + 1
+		const newDay = new Date().getDay() + 1;
+		// 循环从 1 到 days
+		for (let i = 1; i <= days; i++) {
+			if (!props.choosableFutureTime && newYear == selectYear.value && newMonth == selectMonth.value && i > newDay) {
+				continue;
+			}
+			daysArray.push(i);
+		}
+		return daysArray
+	})
+
+	function bindChange(e: UniPickerViewChangeEvent) {
+		const val = e.detail.value
+		if (val.length > 0) {
+			if (val[0] < years.value.length) {
+				selectYear.value = years.value[val[0]]
 			} else {
-				this.closePicker()
+				selectYear.value = years.value.length - 1;
 			}
-		},
-		watch:{
-			visible(n){
-				if(n) {
-					this.openPicker()
-				} else {
-					this.closePicker()
-				}
-				this.$emit('update:visible', n)
-			},
-			value(n){
-				if(this.$strUtil.isNotEmpty(n)){
-					const arr = n.split('-')
-					if(arr.length==2){
-						this.selectYear = parseInt(arr[0])
-						this.selectMonth = parseInt(arr[1])
-					} else if(arr.length==3){
-						this.selectYear = parseInt(arr[0])
-						this.selectMonth = parseInt(arr[1])
-						this.selectDay = parseInt(arr[2])
-					}
-					const yearIndex = this.years.indexOf(this.selectYear)
-					const monthIndex = this.months.indexOf(this.selectMonth)
-					const dayIndex = this.months.indexOf(this.day)
-					if(this.showDay && yearIndex!=-1 && monthIndex!=-1 && dayIndex!=-1){
-						this.pickerValue=[yearIndex, monthIndex, dayIndex]
-					}
-					if(!this.showDay && yearIndex!=-1 && monthIndex!=-1){
-						this.pickerValue=[yearIndex, monthIndex]
-					}
-				}
+		}
+		if (val.length > 1) {
+			if (val[1] < months.value.length) {
+				selectMonth.value = months.value[val[1]]
+			} else {
+				selectMonth.value = months.value.length - 1;
 			}
-		},
-		methods:{
-			bindChange(e: UniPickerViewChangeEvent){
-				const val = e.detail.value
-				if(val.length>0) {
-					if(val[0]<this.years.length) {
-						this.selectYear = this.years[val[0]]
-					} else {
-						this.selectYear = this.years.length - 1;
-					}
-				}
-				if(val.length>1) {
-					if(val[1]<this.months.length) {
-						this.selectMonth = this.months[val[1]]
-					} else {
-						this.selectMonth = this.months.length - 1;
-					}
-				}
-				if(this.showDay && val.length>2) {
-					if(val[2]<this.days.length) {
-						this.selectDay = this.days[val[2]]
-					} else {
-						this.selectDay = this.days.length - 1;
-					}
-				} 
-			},
-			handelPickerCancel(){
-				this.visible = false;
-			},
-			handelPickerOk(){
-				this.year = this.selectYear;
-				this.month = this.selectMonth;
-				this.day = this.selectDay;
-				this.visible = false;
-				this.$emit('ok',{
-					year: this.year,
-					month: this.month,
-					day: this.day
-				})
-			},
-			openPicker(){
-				this.pickerWrap?.style?.setProperty("height", '420rpx')
-			},
-			closePicker(){
-				this.pickerWrap?.style?.setProperty("height", '0rpx')
+		}
+		if (props.showDay && val.length > 2) {
+			if (val[2] < days.value.length) {
+				selectDay.value = days.value[val[2]]
+			} else {
+				selectDay.value = days.value.length - 1;
 			}
 		}
 	}
+	function handelPickerCancel() {
+		// 原 this.visible = false：props 不可直接写，改经 v-model 事件回传（使用方均为 v-model:visible）
+		emit('update:visible', false)
+	}
+	function handelPickerOk() {
+		year.value = selectYear.value;
+		month.value = selectMonth.value;
+		day.value = selectDay.value;
+		emit('update:visible', false)
+		emit('ok', {
+			year: year.value,
+			month: month.value,
+			day: day.value
+		})
+	}
+	function openPicker() {
+		pickerWrap.value?.style?.setProperty("height", '420rpx')
+	}
+	function closePicker() {
+		pickerWrap.value?.style?.setProperty("height", '0rpx')
+	}
+
+	// mounted → onMounted
+	onMounted(() => {
+		pickerWrap.value = uni.getElementById('pickerWrap');
+		if (props.visible) {
+			openPicker()
+		} else {
+			closePicker()
+		}
+	})
+
+	watch((): boolean => props.visible, (n: boolean, o: boolean) => {
+		if (n) {
+			openPicker()
+		} else {
+			closePicker()
+		}
+		emit('update:visible', n)
+	})
+
+	watch((): string => props.value, (n: string, o: string) => {
+		if ($strUtil.isNotEmpty(n)) {
+			const arr = n.split('-')
+			if (arr.length == 2) {
+				selectYear.value = parseInt(arr[0])
+				selectMonth.value = parseInt(arr[1])
+			} else if (arr.length == 3) {
+				selectYear.value = parseInt(arr[0])
+				selectMonth.value = parseInt(arr[1])
+				selectDay.value = parseInt(arr[2])
+			}
+			const yearIndex = years.value.indexOf(selectYear.value)
+			const monthIndex = months.value.indexOf(selectMonth.value)
+			const dayIndex = months.value.indexOf(day.value)
+			if (props.showDay && yearIndex != -1 && monthIndex != -1 && dayIndex != -1) {
+				pickerValue.value = [yearIndex, monthIndex, dayIndex]
+			}
+			if (!props.showDay && yearIndex != -1 && monthIndex != -1) {
+				pickerValue.value = [yearIndex, monthIndex]
+			}
+		}
+	})
 </script>
 
 <style lang="less">

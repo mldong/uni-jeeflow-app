@@ -32,57 +32,49 @@
 	</view>
 </template>
 
-<script lang="uts">
-	export default {
-		name: 'm-mini-bars',
-		props: {
-			buckets: {
-				type: Array as PropType<UTSJSONObject[]>,
-				default: (): UTSJSONObject[] => [] as UTSJSONObject[]
-			},
-			legendA: {
-				type: String,
-				default: '发起'
-			},
-			legendB: {
-				type: String,
-				default: '办结'
-			},
-			barWidth: {
-				type: Number,
-				default: 14
-			}
-		},
-		computed: {
-			maxVal(): number {
-				let m = 0
-				const arr = this.buckets
-				for (let i = 0; i < arr.length; i++) {
-					const a = arr[i].getNumber('a') ?? 0
-					const b = arr[i].getNumber('b') ?? 0
-					if (a > m) m = a
-					if (b > m) m = b
-				}
-				return m
-			}
-		},
-		methods: {
-			barHeight(v: number): number {
-				const max = this.maxVal
-				if (max <= 0) {
-					return 4
-				}
-				const h = Math.round(v * 160 / max)
-				return h < 4 && v > 0 ? 4 : h
-			},
-			showLabel(index: number): boolean {
-				const len = this.buckets.length
-				if (len <= 10) return true
-				// 桶多时每隔几个显示一个
-				const step = Math.ceil(len / 7)
-				return index % step == 0 || index == len - 1
-			}
+<script setup lang="uts">
+	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
+	type Props = {
+		buckets?: UTSJSONObject[],
+		legendA?: string,
+		legendB?: string,
+		barWidth?: number
+	}
+
+	const props = withDefaults(defineProps<Props>(), {
+		buckets: (): UTSJSONObject[] => [] as UTSJSONObject[],
+		legendA: '发起',
+		legendB: '办结',
+		barWidth: 14
+	})
+
+	const maxVal = computed((): number => {
+		let m = 0
+		const arr = props.buckets
+		for (let i = 0; i < arr.length; i++) {
+			const a = arr[i].getNumber('a') ?? 0
+			const b = arr[i].getNumber('b') ?? 0
+			if (a > m) m = a
+			if (b > m) m = b
 		}
+		return m
+	})
+
+	function barHeight(v: number): number {
+		const max = maxVal.value
+		if (max <= 0) {
+			return 4
+		}
+		const h = Math.round(v * 160 / max)
+		return h < 4 && v > 0 ? 4 : h
+	}
+
+	function showLabel(index: number): boolean {
+		const len = props.buckets.length
+		if (len <= 10) return true
+		// 桶多时每隔几个显示一个
+		const step = Math.ceil(len / 7)
+		return index % step == 0 || index == len - 1
 	}
 </script>
 
