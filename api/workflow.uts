@@ -105,6 +105,11 @@ export const processTaskAddCandidate = (param: UTSJSONObject): Promise<any> => {
 export const processTaskJumpAbleTaskNameList = (param: UTSJSONObject): Promise<any> => {
 	return wfPost("processTask/jumpAbleTaskNameList", param)
 }
+// 下一节点候选人分页 {processTaskId, pageNum, pageSize} → 分页 rows（id/realName/userName/deptName）
+// （对齐 vben task-form tf_nextNodeOperator UserSelect 数据源）
+export const processTaskCandidatePage = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/candidatePage", param)
+}
 
 // ── processDesign 流程设计域 ─────────────────────────────────────────────────
 // 按类型分组的可发起流程（工作台九宫格）空体 → [{type,title,items:[...]}]

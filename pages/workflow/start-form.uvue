@@ -24,7 +24,7 @@
 </template>
 <script lang="uts">
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
-	import { SchemaField, resolveFormSchema, calcLeaveDays, schemaFromGraph, schemaFromTableModel, withProcessFormPrefix, isSchemaWfForm } from '@/util/form_schemas.uts'
+	import { SchemaField, resolveFormSchema, calcLeaveDays, schemaFromGraph, schemaFromTableModel, withProcessFormPrefix, isSchemaWfForm, buildInitiatorExtraFields, applyFieldDefaults } from '@/util/form_schemas.uts'
 	import { processDefineDetail, processDefineGetLastByName, processDefineStartAndExecute } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
 
@@ -35,6 +35,8 @@
 		data() {
 			return {
 				defineId: '',
+				// 流程定义 jsonObject（附加字段四开关从这里读）
+				defineJson: null as UTSJSONObject | null,
 				schemaTitle: '发起流程',
 				schemaFields: [] as SchemaField[],
 				formData: {} as UTSJSONObject,
@@ -80,6 +82,20 @@
 			}
 		},
 		methods: {
+			// 表单字段落位：业务字段 + 流程级附加字段（四开关）合并，默认值先灌、prefill 后覆盖
+			applyFormFields(fields: SchemaField[]) {
+				const extras = buildInitiatorExtraFields(this.defineJson, fields)
+				const all: SchemaField[] = []
+				for (let i = 0; i < fields.length; i++) {
+					all.push(fields[i])
+				}
+				for (let i = 0; i < extras.length; i++) {
+					all.push(extras[i])
+				}
+				this.schemaFields = all
+				applyFieldDefaults(this.formData, all)
+				this.applyPrefill()
+			},
 			applyPrefill() {
 				if (this.prefillData == null) {
 					return
@@ -95,6 +111,7 @@
 					const data = res as UTSJSONObject
 					this.schemaTitle = data.getString('displayName') ?? '发起流程'
 					const jsonObject = data.getJSON('jsonObject')
+					this.defineJson = jsonObject
 					const instanceUrl = jsonObject != null ? (jsonObject!.getString('instanceUrl') ?? '') : ''
 					const defineName = data.getString('name') ?? ''
 					// 对齐 vben：只按 instanceUrl → wfFormComponentMap；SchemaWfForm 才走 __schema__/getByTableName
@@ -103,8 +120,7 @@
 							const embedded = schemaFromGraph(jsonObject!)
 							if (embedded != null) {
 								uni.hideLoading()
-								this.schemaFields = embedded!
-								this.applyPrefill()
+								this.applyFormFields(embedded!)
 								return
 							}
 						}
@@ -113,8 +129,7 @@
 								uni.hideLoading()
 								const fields = schemaFromTableModel(modelRes as UTSJSONObject)
 								if (fields != null) {
-									this.schemaFields = fields!
-									this.applyPrefill()
+									this.applyFormFields(fields!)
 								} else {
 									uni.showToast({ title: '元数据表单加载失败: ' + defineName, icon: 'none' })
 								}
@@ -131,9 +146,8 @@
 					const named = resolveFormSchema(instanceUrl)
 					if (named != null) {
 						uni.hideLoading()
-						this.schemaFields = named!.fields
 						this.schemaTitle = named!.title
-						this.applyPrefill()
+						this.applyFormFields(named!.fields)
 						return
 					}
 					uni.hideLoading()

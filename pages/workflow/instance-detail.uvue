@@ -68,7 +68,7 @@
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
 	import mTimeline from '@/components/m-timeline/m-timeline.uvue'
 	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
-	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm } from '@/util/form_schemas.uts'
+	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm, buildInitiatorExtraFields } from '@/util/form_schemas.uts'
 	import { processInstanceDetail, processInstanceHighLight, processInstanceApprovalRecord, processInstanceWithdraw, processInstanceCreateCc } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
 	import { userSelectRows } from '@/api/user.uts'
@@ -252,6 +252,13 @@
 							}
 						}
 						hydrateSchemaFormData(this.formData, this.schemaFields)
+						// 流程级发起附加字段回显（四开关；只显示 formData 有值的，避免空行噪音）
+						const extras = buildInitiatorExtraFields(graph, this.schemaFields)
+						for (let i = 0; i < extras.length; i++) {
+							if (this.formData.get(extras[i].field) != null) {
+								this.schemaFields.push(extras[i])
+							}
+						}
 					}
 					// 2. 高亮（整份透传，含 nodeProgress）+ 3. 审批记录
 					try {

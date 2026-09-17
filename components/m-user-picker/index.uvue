@@ -1,0 +1,207 @@
+<template>
+	<view class="m-up-root" v-if="visible">
+		<view class="m-up-mask" @tap="onCancel"></view>
+		<view class="m-up-sheet">
+			<view class="m-up-head">
+				<view class="m-up-head-btn" @tap="onCancel">
+					<text class="m-up-head-cancel">取消</text>
+				</view>
+				<text class="m-up-head-title">{{title}}</text>
+				<view class="m-up-head-btn" @tap="onOk">
+					<text class="m-up-head-ok">确定</text>
+				</view>
+			</view>
+			<scroll-view class="m-up-list" :scroll-y="true">
+				<!-- 单选：radio-group（替代 ActionSheet，选项多时可滚动） -->
+				<radio-group v-if="!multiple" class="m-up-group" @change="onRadioChange">
+					<view class="m-up-row" v-for="(o, oi) in options" :key="oi">
+						<radio :value="optionValue(o)" :checked="isSel(o)" color="#2563EB" style="transform:scale(0.8);" />
+						<text class="m-up-row-text">{{o.getString('label') ?? ''}}</text>
+					</view>
+				</radio-group>
+				<!-- 多选：checkbox-group，确定后以 value 数组回抛 -->
+				<checkbox-group v-else class="m-up-group" @change="onCheckboxChange">
+					<view class="m-up-row" v-for="(o, oi) in options" :key="oi">
+						<checkbox :value="optionValue(o)" :checked="isSel(o)" color="#2563EB" style="transform:scale(0.8);" />
+						<text class="m-up-row-text">{{o.getString('label') ?? ''}}</text>
+					</view>
+				</checkbox-group>
+			</scroll-view>
+			<view class="m-up-empty" v-if="options.length == 0">
+				<text class="m-up-empty-text">暂无可选项</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 通用选人/选项弹层（m-user-picker）
+	 * 底部弹层 + 滚动列表，单选 radio / 多选 checkbox；
+	 * 替代 uni.showActionSheet（itemList 过多时截断且不可滚动）。
+	 * 用途：任务办理「指定下一节点处理人 / 抄送」（对齐 vben UserSelect 多选）、会签加签。
+	 */
+	export default {
+		name: "m-user-picker",
+		props: {
+			visible: {
+				type: Boolean,
+				default: false
+			},
+			title: {
+				type: String,
+				default: '请选择'
+			},
+			// 选项 [{label, value}]
+			options: {
+				type: Array as PropType<UTSJSONObject[]>,
+				default: [] as UTSJSONObject[]
+			},
+			// 已选 value 集合（回显）
+			selected: {
+				type: Array as PropType<string[]>,
+				default: [] as string[]
+			},
+			multiple: {
+				type: Boolean,
+				default: false
+			}
+		},
+		emits: ['update:visible', 'ok'],
+		data() {
+			return {
+				innerSel: [] as string[]
+			};
+		},
+		watch: {
+			// 每次打开从 props 重建内部选中态，避免上次选择的残留
+			visible(n: Boolean) {
+				if (n == true) {
+					const arr: string[] = []
+					for (let i = 0; i < this.selected.length; i++) {
+						arr.push(this.selected[i])
+					}
+					this.innerSel = arr
+				}
+			}
+		},
+		methods: {
+			optionValue(o: UTSJSONObject): string {
+				return o.getString('value') ?? ''
+			},
+			isSel(o: UTSJSONObject): boolean {
+				const v = this.optionValue(o)
+				for (let i = 0; i < this.innerSel.length; i++) {
+					if (this.innerSel[i] == v) {
+						return true
+					}
+				}
+				return false
+			},
+			// 模板内 $event 是 Any，参数收 any 后内部断言（error17，同 m-schema-form）
+			onRadioChange(event: any) {
+				const e = event as UniRadioGroupChangeEvent
+				const arr: string[] = []
+				arr.push(e.detail.value)
+				this.innerSel = arr
+			},
+			onCheckboxChange(event: any) {
+				const e = event as UniCheckboxGroupChangeEvent
+				this.innerSel = e.detail.value
+			},
+			onCancel() {
+				this.$emit('update:visible', false)
+			},
+			onOk() {
+				this.$emit('ok', this.innerSel)
+				this.$emit('update:visible', false)
+			}
+		}
+	}
+</script>
+
+<style lang="less">
+	.m-up-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 999;
+	}
+
+	.m-up-mask {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.4);
+	}
+
+	.m-up-sheet {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #ffffff;
+		border-top-left-radius: 24rpx;
+		border-top-right-radius: 24rpx;
+		padding-bottom: 40rpx;
+	}
+
+	.m-up-head {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding: 24rpx;
+		border-bottom: 1rpx solid #F0F0F0;
+
+		.m-up-head-btn {
+			padding: 8rpx 16rpx;
+		}
+
+		.m-up-head-title {
+			font-size: 30rpx;
+			font-weight: bold;
+			color: #333333;
+		}
+
+		.m-up-head-cancel {
+			font-size: 28rpx;
+			color: #999999;
+		}
+
+		.m-up-head-ok {
+			font-size: 28rpx;
+			color: #2563EB;
+		}
+	}
+
+	.m-up-list {
+		height: 640rpx;
+	}
+
+	.m-up-row {
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 32rpx;
+		border-bottom: 1rpx solid #F5F5F5;
+
+		.m-up-row-text {
+			font-size: 28rpx;
+			color: #333333;
+			margin-left: 12rpx;
+		}
+	}
+
+	.m-up-empty {
+		padding: 60rpx 0;
+		align-items: center;
+
+		.m-up-empty-text {
+			font-size: 26rpx;
+			color: #BBBBBB;
+		}
+	}
+</style>

@@ -6,6 +6,8 @@
  * key = instanceUrl / formKey（小写匹配），未注册的 key 由调用方降级为只读键值列表。
  *
  * 字段类型：input | number | textarea | date | select | radio | checkbox | upload
+ * 多选：SchemaField.multiple=true 时 select 渲染为 checkbox-group，值存逗号串
+ *（引擎 tf_nextNodeOperator/f_ccActors 等对数组/逗号串双兼容，见 jeeflow-java CreateTaskHandler）。
  * 字段 id 契约（pro 实测 2026-08-30）：
  *   - 命名组件（LeaveWfForm）：表单 id 已带 f_（f_reasonType / f_day / f_title），提交原样保留
  *   - SchemaWfForm / __schema__：pro 种子 fieldName 已是 f_sealType（非 sealType）；
@@ -26,6 +28,13 @@ export type SchemaField = {
 	apiLabelField: string;
 	apiValueField: string;
 	readonly: boolean;
+	// 多选（vben ext {Component}_mode=='multiple' / {Component}_multiple）；select 渲染 checkbox-group，值逗号串
+	multiple: boolean;
+	// 字段权限 HIDDEN（vben enableFieldPerm → taskModel.ext PERMISSION_<fieldId>==3），渲染层直接过滤
+	hidden: boolean;
+	// 列默认值原始串 + 列 dataType（'12' 数值 / '30' JSON），applyFieldDefaults 灌入 formData（对齐 vben）
+	defaultValue: string;
+	defaultValueType: string;
 }
 
 /** 流程表单变量前缀（对齐 vben PROCESS_FORM_FIELD_PREFIX） */
@@ -160,6 +169,173 @@ export const hydrateSchemaFormData = (formData: UTSJSONObject, fields: SchemaFie
 	}
 }
 
+/**
+ * 列默认值灌入（对齐 vben buildFormFieldSchema：dataType 12→数值 / 30→JSON.parse，其余原样字符串）。
+ * 仅 formData 无该键时写入；调用时机 = 表单初始化后、重新发起 prefill 前（prefill 覆盖默认值）。
+ */
+export const applyFieldDefaults = (formData: UTSJSONObject, fields: SchemaField[]): void => {
+	for (let i = 0; i < fields.length; i++) {
+		const f = fields[i]
+		if (f.defaultValue.length == 0 || formData.get(f.field) != null) {
+			continue
+		}
+		if (f.defaultValueType == '12') {
+			const n = parseFloat(f.defaultValue)
+			if (!isNaN(n)) {
+				formData[f.field] = n
+			}
+		} else if (f.defaultValueType == '30') {
+			const parsed = JSON.parse(f.defaultValue)
+			if (parsed != null) {
+				formData[f.field] = parsed!
+			}
+		} else {
+			formData[f.field] = f.defaultValue
+		}
+	}
+}
+
+/**
+ * 流程级「发起附加字段」构建（对齐 vben select-user-form-ignore.vue 四开关）：
+ * selectUserOnInitiate → f_nextNodeOperator（多选，selectUserApi || /sys/user/select，必填）
+ * enableCcActors      → f_ccActors（多选，/sys/user/select）
+ * enableApplyReason   → f_applyReason（textarea）
+ * enableAttachment    → f_attachment（upload）
+ * 已存在同名字段时跳过（如 leave 命名表单自带 f_attachment）。
+ */
+export const buildInitiatorExtraFields = (jsonObject: UTSJSONObject | null, existing: SchemaField[]): SchemaField[] => {
+	const out: SchemaField[] = []
+	if (jsonObject == null) {
+		return out
+	}
+	const jo = jsonObject!
+	const hasField = (id: string): boolean => {
+		for (let i = 0; i < existing.length; i++) {
+			if (existing[i].field == id) {
+				return true
+			}
+		}
+		for (let i = 0; i < out.length; i++) {
+			if (out[i].field == id) {
+				return true
+			}
+		}
+		return false
+	}
+	const flagOn = (key: string): boolean => {
+		if (jo.getBoolean(key) == true) {
+			return true
+		}
+		const n = jo.getNumber(key)
+		return n != null && n == 1
+	}
+	if (flagOn('selectUserOnInitiate') && !hasField('f_nextNodeOperator')) {
+		let api = jo.getString('selectUserApi') ?? ''
+		let lf = 'name'
+		if (api.length == 0) {
+			api = '/sys/user/select'
+		}
+		if (api == '/sys/user/select') {
+			lf = 'realName'
+		}
+		out.push({
+			field: 'f_nextNodeOperator',
+			label: '指定下一节点处理人',
+			type: 'select',
+			required: true,
+			placeholder: '请选择下一节点处理人',
+			options: [] as UTSJSONObject[],
+			dictType: '',
+			apiOptions: api,
+			apiLabelField: lf,
+			apiValueField: 'id',
+			readonly: false,
+			multiple: true,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
+		} as SchemaField)
+	}
+	if (flagOn('enableCcActors') && !hasField('f_ccActors')) {
+		out.push({
+			field: 'f_ccActors',
+			label: '抄送给',
+			type: 'select',
+			required: false,
+			placeholder: '请选择抄送给',
+			options: [] as UTSJSONObject[],
+			dictType: '',
+			apiOptions: '/sys/user/select',
+			apiLabelField: 'realName',
+			apiValueField: 'id',
+			readonly: false,
+			multiple: true,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
+		} as SchemaField)
+	}
+	if (flagOn('enableApplyReason') && !hasField('f_applyReason')) {
+		out.push({
+			field: 'f_applyReason',
+			label: '申请理由',
+			type: 'textarea',
+			required: false,
+			placeholder: '请输入申请理由',
+			options: [] as UTSJSONObject[],
+			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
+		} as SchemaField)
+	}
+	if (flagOn('enableAttachment') && !hasField('f_attachment')) {
+		out.push({
+			field: 'f_attachment',
+			label: '上传附件',
+			type: 'upload',
+			required: false,
+			placeholder: '可选',
+			options: [] as UTSJSONObject[],
+			dictType: '',
+			apiOptions: '',
+			apiLabelField: '',
+			apiValueField: '',
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
+		} as SchemaField)
+	}
+	return out
+}
+
+/**
+ * 节点字段权限（对齐 vben process-task/detail.vue initPermission）：
+ * enableFieldPerm 开启时读 taskModel.ext 的 PERMISSION_<fieldId>：
+ * 1=只读（readonly）3=隐藏（hidden），缺省 2=可编辑。fieldId 与 vben 表单 schema fieldName 同源
+ * （动态=camelCase 无前缀；命名组件=f_ 前缀原样），两端键天然一致。
+ */
+export const applyFieldPermissions = (fields: SchemaField[], taskModelExt: UTSJSONObject | null): void => {
+	if (taskModelExt == null) {
+		return
+	}
+	for (let i = 0; i < fields.length; i++) {
+		const perm = taskModelExt!.getNumber('PERMISSION_' + fields[i].field)
+		if (perm == 1) {
+			fields[i].readonly = true
+		} else if (perm == 3) {
+			fields[i].hidden = true
+		}
+	}
+}
+
 export type FormSchema = {
 	key: string; // instanceUrl / formKey（小写）
 	title: string;
@@ -194,7 +370,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: false
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		},
 		{
 			field: 'f_startTime',
@@ -207,7 +387,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: false
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		},
 		{
 			field: 'f_startPeriod',
@@ -223,7 +407,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: false
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		},
 		{
 			field: 'f_endTime',
@@ -236,7 +424,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: false
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		},
 		{
 			field: 'f_endPeriod',
@@ -252,7 +444,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: false
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		},
 		{
 			field: 'f_day',
@@ -265,7 +461,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: true
+			readonly: true,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		},
 		{
 			field: 'f_title',
@@ -278,7 +478,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: false
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		},
 		{
 			field: 'f_attachment',
@@ -291,7 +495,11 @@ export const leaveSchema: FormSchema = {
 			apiOptions: '',
 			apiLabelField: '',
 			apiValueField: '',
-			readonly: false
+			readonly: false,
+			multiple: false,
+			hidden: false,
+			defaultValue: '',
+			defaultValueType: ''
 		}
 	] as SchemaField[]
 }
@@ -394,13 +602,15 @@ export const schemaFromColumns = (columns: any): SchemaField[] | null => {
 		let apiLabelField = ''
 		let apiValueField = ''
 		let readonly = false
+		let multiple = false
 		// 对齐 vben buildFormFieldSchema / toComponentProps 常用组件
 		if (component == 'Input' || component == 'InputPassword' || component == 'AutoComplete'
 			|| component == 'StrengthMeter' || component == 'InputCountDown' || component == 'IconPicker'
 			|| component == 'Mentions') {
 			type = 'input'
 		} else if (component == 'Textarea' || component == 'InputTextArea' || component == 'RichText'
-			|| component == 'RichTextEditor' || component == 'Editor' || component == 'Tinymce') {
+			|| component == 'RichTextEditor' || component == 'Editor' || component == 'Tinymce'
+			|| component == 'AiEditor') {
 			type = 'textarea'
 		} else if (component == 'InputNumber' || component == 'Rate' || component == 'Slider') {
 			type = 'number'
@@ -414,7 +624,8 @@ export const schemaFromColumns = (columns: any): SchemaField[] | null => {
 			}
 		} else if (component == 'Select' || component == 'ApiSelect' || component == 'ApiTreeSelect'
 			|| component == 'ApiCascader' || component == 'ApiSelectTable' || component == 'TreeSelect'
-			|| component == 'Cascader' || component == 'Transfer' || component == 'ApiTransfer') {
+			|| component == 'Cascader' || component == 'Transfer' || component == 'ApiTransfer'
+			|| component == 'UserSelect') {
 			type = 'select'
 			if (ext != null) {
 				// Api* 组件：远程选项接口（api + labelField/valueField，对齐 vben ApiSelect/ApiTreeSelect）
@@ -425,21 +636,73 @@ export const schemaFromColumns = (columns: any): SchemaField[] | null => {
 					apiOptions = api
 					apiLabelField = e.getString(component + '_labelField') ?? e.getString('labelField') ?? 'name'
 					apiValueField = e.getString(component + '_valueField') ?? e.getString('valueField') ?? 'id'
+				} else if (component == 'UserSelect') {
+					// UserSelect 无 api ext：对齐 vben 默认走系统用户下拉（realName/id）
+					apiOptions = '/sys/user/select'
+					apiLabelField = 'realName'
+					apiValueField = 'id'
 				} else {
 					dictType = e.getString(component + '_code') ?? e.getString('code') ?? ''
 				}
+				// 多选：ext.ApiSelect_mode=='multiple' / ext.UserSelect_multiple==1（vben ext 键 = 组件名_属性名）
+				const mode = e.getString(component + '_mode') ?? e.getString('mode') ?? ''
+				if (mode == 'multiple') {
+					multiple = true
+				}
+				const mulNum = e.getNumber(component + '_multiple') ?? e.getNumber('multiple')
+				if (mulNum != null && mulNum == 1) {
+					multiple = true
+				}
+				const mulBool = e.getBoolean(component + '_multiple') ?? e.getBoolean('multiple')
+				if (mulBool == true) {
+					multiple = true
+				}
+			} else if (component == 'UserSelect') {
+				apiOptions = '/sys/user/select'
+				apiLabelField = 'realName'
+				apiValueField = 'id'
 			}
-		} else if (component == 'RadioGroup' || component == 'Radio' || component == 'ApiRadioGroup') {
+		} else if (component == 'RadioGroup' || component == 'Radio') {
 			type = 'radio'
+		} else if (component == 'ApiRadioGroup' || component == 'ApiRadioClassGroup'
+			|| component == 'RadioClassGroup') {
+			// Class 变体是纯样式差异（按钮组），移动端同构 radio；Api* 变体 ext 带远程选项接口
+			type = 'radio'
+			if (ext != null && (component.startsWith('Api'))) {
+				const e = ext!
+				const api = e.getString(component + '_api') ?? e.getString('api') ?? ''
+				if (api.length > 0) {
+					apiOptions = api
+					apiLabelField = e.getString(component + '_labelField') ?? e.getString('labelField') ?? 'name'
+					apiValueField = e.getString(component + '_valueField') ?? e.getString('valueField') ?? 'id'
+				}
+			}
 		} else if (component == 'CheckboxGroup' || component == 'Checkbox') {
 			type = 'checkbox'
+		} else if (component == 'ApiCheckboxGroup' || component == 'ApiCheckboxClassGroup'
+			|| component == 'CheckboxClassGroup') {
+			type = 'checkbox'
+			if (ext != null && (component.startsWith('Api'))) {
+				const e = ext!
+				const api = e.getString(component + '_api') ?? e.getString('api') ?? ''
+				if (api.length > 0) {
+					apiOptions = api
+					apiLabelField = e.getString(component + '_labelField') ?? e.getString('labelField') ?? 'name'
+					apiValueField = e.getString(component + '_valueField') ?? e.getString('valueField') ?? 'id'
+				}
+			}
 		} else if (component == 'Switch') {
 			// 移动端无 Switch：降级为 select（是/否）
 			type = 'select'
 		} else if (component == 'Upload' || component == 'ImageUpload' || component == 'FileUpload') {
 			type = 'upload'
+		} else if (component == 'Divider') {
+			// 布局分隔组件：无字段值，移动端跳过（vben 渲染为分组标题）
+			continue
 		} else {
-			// 未知组件：降级 input，保留列（禁止静默丢字段）
+			// 已知无法在移动端编辑的组件：显式降级只读 input，保留列（禁止静默丢字段）。
+			// CustomComponent（动态自定义组件）/ EditTable / KeyValueEditor / LabelValueEditor /
+			// Avatar / TableLink（display 回显类）——vben 表单侧同样是禁用占位或非编辑组件
 			type = 'input'
 			readonly = true
 		}
@@ -468,7 +731,11 @@ export const schemaFromColumns = (columns: any): SchemaField[] | null => {
 			apiOptions: apiOptions,
 			apiLabelField: apiLabelField,
 			apiValueField: apiValueField,
-			readonly: readonly
+			readonly: readonly,
+			multiple: multiple,
+			hidden: false,
+			defaultValue: col.getString('defaultValue') ?? '',
+			defaultValueType: col.getString('dataType') ?? ''
 		} as SchemaField)
 	}
 	if (fields.length == 0) {

@@ -26,12 +26,12 @@
 					<text class="m-info-value">{{instanceCreateTime}}</text>
 				</view>
 			</view>
-			<!-- 业务表单（只读） -->
-			<view class="m-card" v-if="schemaFields.length > 0">
+			<!-- 业务表单（首任务节点待办=可编辑重新提交，其余只读回显；含发起附加字段回显） -->
+			<view class="m-card" v-if="allFields.length > 0">
 				<view class="m-card-title">
 					<text class="m-card-title-text">申请内容</text>
 				</view>
-				<m-schema-form :fields="schemaFields" :formData="formData" :readonly="true"></m-schema-form>
+				<m-schema-form :fields="allFields" :formData="formData" :readonly="!canEditBusiness"></m-schema-form>
 			</view>
 			<!-- 无 schema 的流程：降级展示 formData 键值 -->
 			<view class="m-card" v-else-if="fallbackRows.length > 0">
@@ -41,6 +41,47 @@
 				<view class="m-info-row" v-for="(row, index) in fallbackRows" :key="index">
 					<text class="m-info-label">{{row.getString('label') ?? ''}}</text>
 					<text class="m-info-value">{{row.getString('value') ?? ''}}</text>
+				</view>
+			</view>
+			<!-- 审批选项（对齐 vben task-form 默认审批表单：审批附件 / 指定下一节点处理人 / 抄送） -->
+			<view class="m-card" v-if="executable">
+				<view class="m-card-title">
+					<text class="m-card-title-text">审批选项</text>
+				</view>
+				<view class="m-opt-row">
+					<text class="m-opt-label">审批附件</text>
+					<view class="m-opt-upload" @tap="onChooseApprovalFile">
+						<m-icon type="plusempty" :size="20" color="#2563EB"></m-icon>
+						<text class="m-opt-upload-text">选择文件</text>
+					</view>
+				</view>
+				<view class="m-opt-file" v-for="(f, fi) in approvalFileNames" :key="'af' + fi">
+					<m-icon type="paperclip" :size="16" color="#16A34A"></m-icon>
+					<text class="m-opt-file-name">{{f}}</text>
+				</view>
+				<view class="m-opt-row" v-if="!isCountersign">
+					<view class="m-opt-check" @tap="toggleAssign">
+						<view class="m-opt-check-box" :style="checkStyle(isAssignNext)">
+							<text v-if="isAssignNext" class="m-opt-check-mark">✓</text>
+						</view>
+						<text class="m-opt-label">指定下一节点处理人</text>
+					</view>
+				</view>
+				<view class="m-opt-pick" v-if="isAssignNext && !isCountersign" @tap="openPicker('next')">
+					<text :class="nextNodeNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{nextNodeNames.length > 0 ? nextNodeNames : '请选择下一节点处理人'}}</text>
+					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
+				</view>
+				<view class="m-opt-row">
+					<view class="m-opt-check" @tap="toggleCc">
+						<view class="m-opt-check-box" :style="checkStyle(isCc)">
+							<text v-if="isCc" class="m-opt-check-mark">✓</text>
+						</view>
+						<text class="m-opt-label">抄送</text>
+					</view>
+				</view>
+				<view class="m-opt-pick" v-if="isCc" @tap="openPicker('cc')">
+					<text :class="ccNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{ccNames.length > 0 ? ccNames : '请选择抄送人'}}</text>
+					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
 				</view>
 			</view>
 				<!-- 流程图（原生渲染 m-flow-native；旧 webview 方案已删，如需回退见 git 历史 components/m-flow-webview） -->
@@ -65,6 +106,9 @@
 		<!-- #ifdef APP -->
 		</scroll-view>
 		<!-- #endif -->
+		<!-- 通用选人弹层（指定下一节点处理人 / 抄送 / 会签加签） -->
+		<m-user-picker v-model:visible="pickerVisible" :title="pickerTitle" :options="pickerOptions"
+			:selected="pickerSelected" :multiple="pickerMultiple" @ok="onPickerOk"></m-user-picker>
 		<!-- 底部审批操作（对齐 vben task-form：普通 vs 会签 performType===1） -->
 		<view class="m-approve-bar" v-if="executable">
 			<input class="m-approve-input" v-model="comment" placeholder="请输入审批意见" placeholder-class="m-form-placeholder" />
@@ -73,7 +117,7 @@
 			</view>
 			<!-- 会签：同意 / 不同意(20) / 加签 -->
 			<view class="m-approve-btns" v-else-if="isCountersign">
-				<button class="m-btn m-btn-more" @tap="onAddCandidate">加签</button>
+				<button class="m-btn m-btn-more" @tap="onAddSign">加签</button>
 				<button class="m-btn m-btn-reject" @tap="doExecute(20)">不同意</button>
 				<button class="m-btn m-btn-agree" @tap="doExecute(1)">同意</button>
 			</view>
@@ -90,16 +134,19 @@
 	import mSchemaForm from '@/components/m-schema-form/m-schema-form.uvue'
 	import mTimeline from '@/components/m-timeline/m-timeline.uvue'
 	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
-	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm } from '@/util/form_schemas.uts'
-	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
+	import mUserPicker from '@/components/m-user-picker/index.uvue'
+	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm, buildInitiatorExtraFields, applyFieldPermissions, withProcessFormPrefix } from '@/util/form_schemas.uts'
+	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processTaskCandidatePage, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
 	import { userSelectRows } from '@/api/user.uts'
+	import { uploadFile } from '@/api/file.uts'
 
 	export default {
 		components: {
 			mSchemaForm,
 			mTimeline,
-			mFlowNative
+			mFlowNative,
+			mUserPicker
 		},
 		data() {
 			return {
@@ -114,6 +161,8 @@
 				performType: 0,
 				formKey: '',
 				schemaFields: [] as SchemaField[],
+				// 流程级发起附加字段（f_nextNodeOperator/f_ccActors/f_applyReason/f_attachment，按开关回显）
+				extraFields: [] as SchemaField[],
 				formData: {} as UTSJSONObject,
 				fallbackRows: [] as UTSJSONObject[],
 				graph: null as UTSJSONObject | null,
@@ -123,12 +172,52 @@
 				recordsLoading: true,
 				users: [] as UTSJSONObject[],
 				comment: '',
-				submitting: false
+				submitting: false,
+				// ── 审批选项（对齐 vben task-form 默认审批表单）──
+				// 审批附件：fileInfoId 逗号串 + 回显文件名
+				approvalFileIds: '',
+				approvalFileNames: [] as string[],
+				// 指定下一节点处理人（普通节点；候选人来自 /wf/processTask/candidatePage）
+				isAssignNext: false,
+				nextNodeIds: [] as string[],
+				// 抄送（人员来自 /sys/user/select）
+				isCc: false,
+				ccIds: [] as string[],
+				// 下一节点候选人 {label,value}
+				candidates: [] as UTSJSONObject[],
+				// 选人弹层状态
+				pickerVisible: false,
+				pickerTitle: '',
+				pickerOptions: [] as UTSJSONObject[],
+				pickerSelected: [] as string[],
+				pickerMultiple: true,
+				pickerSource: ''
 			};
 		},
 		computed: {
 			isCountersign: (): boolean => {
 				return this.performType == 1
+			},
+			// 首任务节点待办：业务表单可编辑（重新提交，对齐 vben detail.vue view=false）
+			canEditBusiness: (): boolean => {
+				return this.executable && this.isFirstTaskNode
+			},
+			// 业务字段 + 发起附加字段合并渲染
+			allFields: (): SchemaField[] => {
+				const all: SchemaField[] = []
+				for (let i = 0; i < this.schemaFields.length; i++) {
+					all.push(this.schemaFields[i])
+				}
+				for (let i = 0; i < this.extraFields.length; i++) {
+					all.push(this.extraFields[i])
+				}
+				return all
+			},
+			nextNodeNames: (): string => {
+				return this.namesOf(this.candidates, this.nextNodeIds)
+			},
+			ccNames: (): string => {
+				return this.namesOf(this.users, this.ccIds)
 			}
 		},
 		onLoad(options: OnLoadOptions) {
@@ -233,11 +322,25 @@
 							uni.showToast({ title: '未注册表单组件: ' + formUrl, icon: 'none' })
 						}
 					}
+					// 节点字段权限（对齐 vben：enableFieldPerm → taskModel.ext 的 PERMISSION_<fieldId>）
+					if (graph != null && graph!.getBoolean('enableFieldPerm') == true && task.getJSON('taskModel') != null) {
+						applyFieldPermissions(this.schemaFields, task.getJSON('taskModel')!.getJSON('ext'))
+					}
 					if (this.schemaFields.length > 0) {
 						hydrateSchemaFormData(this.formData, this.schemaFields)
 					} else {
 						this.buildFallbackRows(inst)
 					}
+					// 流程级发起附加字段回显：有值的必显；首节点待办可编辑时全量显示
+					const extras = buildInitiatorExtraFields(graph, this.schemaFields)
+					const showExtras: SchemaField[] = []
+					for (let i = 0; i < extras.length; i++) {
+						const ef = extras[i]
+						if (this.formData.get(ef.field) != null || (this.executable && this.isFirstTaskNode)) {
+							showExtras.push(ef)
+						}
+					}
+					this.extraFields = showExtras
 				} catch (err) {
 					uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
 				} finally {
@@ -278,9 +381,18 @@
 				if (this.submitting) {
 					return
 				}
-				// 不同意类（普通拒绝=2 / 会签不同意=20）需意见
-				if ((submitType == 2 || submitType == 20) && (this.comment ?? '').length == 0) {
-					uni.showToast({ title: '不同意必须填写审批意见', icon: 'none' })
+				// 审批意见必填（对齐 vben tf_approvalComment rules=required，全部按钮生效）
+				if ((this.comment ?? '').length == 0) {
+					uni.showToast({ title: '请填写审批意见', icon: 'none' })
+					return
+				}
+				// 指派/抄送勾选后必须选人（对齐 vben selectRequired）
+				if (this.isAssignNext && !this.isCountersign && this.nextNodeIds.length == 0) {
+					uni.showToast({ title: '请选择下一节点处理人', icon: 'none' })
+					return
+				}
+				if (this.isCc && this.ccIds.length == 0) {
+					uni.showToast({ title: '请选择抄送人', icon: 'none' })
 					return
 				}
 				this.submitting = true
@@ -290,6 +402,34 @@
 					submitType: submitType,
 					tf_approvalComment: this.comment ?? ''
 				} as UTSJSONObject
+				// 审批附件（vben tf_approvalAttachment，fileInfoId 逗号串，引擎 FlowConst 同键）
+				if (this.approvalFileIds.length > 0) {
+					param['tf_approvalAttachment'] = this.approvalFileIds
+				}
+				// 指定下一节点处理人 / 抄送（引擎对数组与逗号串双兼容）；跳转(4)剔除指派（对齐 vben）
+				if (submitType != 4 && !this.isCountersign && this.isAssignNext) {
+					param['tf_isAssignNextNodeOperator'] = true
+					param['tf_nextNodeOperator'] = this.nextNodeIds
+				}
+				if (this.isCc) {
+					param['tf_isCc'] = true
+					param['tf_ccActors'] = this.ccIds
+				}
+				// 首节点重新提交：业务字段带 f_ 前缀重交 + 发起附加映射 tf_（对齐 vben detail.vue onConfirm）
+				if (submitType == 0) {
+					const biz = withProcessFormPrefix(this.collectBusinessFormData())
+					biz.toMap().forEach((value, key) => {
+						param[key] = value
+					})
+					const nno = this.formData.get('f_nextNodeOperator')
+					if (nno != null) {
+						param['tf_nextNodeOperator'] = nno!
+					}
+					const cca = this.formData.get('f_ccActors')
+					if (cca != null) {
+						param['tf_ccActors'] = cca!
+					}
+				}
 				if (submitType == 4 && taskName.length > 0) {
 					param['taskName'] = taskName
 				}
@@ -306,6 +446,18 @@
 				}).finally(() => {
 					this.submitting = false
 				})
+			},
+			// 业务 schema 字段当前值（只取 schemaFields 声明过的字段，不把 u_*/历史 tf_ 变量带回）
+			collectBusinessFormData(): UTSJSONObject {
+				const out = {} as UTSJSONObject
+				for (let i = 0; i < this.schemaFields.length; i++) {
+					const f = this.schemaFields[i].field
+					const v = this.formData.get(f)
+					if (v != null) {
+						out[f] = v!
+					}
+				}
+				return out
 			},
 			onMoreActions() {
 				const self = this
@@ -379,51 +531,165 @@
 					for (let i = 0; i < rows.length; i++) {
 						this.users.push(rows[i])
 					}
+					// 选人弹层已打开时补选项（用户列表异步晚于弹层）
+					if (this.pickerVisible && this.pickerSource != 'next') {
+						this.pickerOptions = this.users
+					}
 				}).catch((_e) => { })
 			},
-			onAddCandidate() {
-				if (this.submitting) {
-					return
+			// ── 审批选项：附件 / 指派下一节点处理人 / 抄送 / 会签加签 ──
+			checkStyle(on: boolean): string {
+				return on ? 'background-color:#2563EB;border-color:#2563EB;' : ''
+			},
+			toggleAssign() {
+				this.isAssignNext = !this.isAssignNext
+			},
+			toggleCc() {
+				this.isCc = !this.isCc
+			},
+			onChooseApprovalFile() {
+				uni.chooseImage({
+					count: 1,
+					success: (res) => {
+						const paths = res.tempFilePaths
+						if (paths == null || paths.length == 0) {
+							return
+						}
+						uni.showLoading({
+							title: '上传中……',
+							mask: true
+						})
+						uploadFile(paths[0]).then((data) => {
+							uni.hideLoading()
+							const fileInfoId = data.getString('fileInfoId') ?? ''
+							const url = data.getString('url') ?? ''
+							if (fileInfoId.length > 0) {
+								// 记录文件名用于回显（取 url 最后一段），契约同 m-schema-form upload
+								let name = url
+								const idx = url.lastIndexOf('/')
+								if (idx >= 0 && idx < url.length - 1) {
+									name = url.substring(idx + 1)
+								}
+								this.approvalFileIds = this.approvalFileIds.length > 0 ? this.approvalFileIds + ',' + fileInfoId : fileInfoId
+								this.approvalFileNames.push(name)
+							}
+						}).catch((err) => {
+							uni.hideLoading()
+							uni.showToast({
+								title: this.$strUtil.anyToStr(err),
+								icon: 'none'
+							})
+						})
+					}
+				} as ChooseImageOptions)
+			},
+			// 下一节点候选人（candidatePage，realName/id，对齐 vben UserSelect 数据源）
+			loadCandidates() {
+				processTaskCandidatePage({
+					processTaskId: this.taskId,
+					pageNum: 1,
+					pageSize: 200
+				} as UTSJSONObject).then((res) => {
+					const resObj = res as UTSJSONObject
+					const rows = resObj != null ? resObj.getArray<UTSJSONObject>('rows') : null
+					const opts: UTSJSONObject[] = []
+					if (rows != null) {
+						for (let i = 0; i < rows!.length; i++) {
+							const id = rows![i].getString('id') ?? ''
+							if (id.length == 0) {
+								continue
+							}
+							opts.push({ label: rows![i].getString('realName') ?? id, value: id } as UTSJSONObject)
+						}
+					}
+					this.candidates = opts
+					if (this.pickerVisible && this.pickerSource == 'next') {
+						this.pickerOptions = this.candidates
+					}
+				}).catch((_e) => {
+					// 候选接口异常：选项留空，弹层内提示暂无可选
+				})
+			},
+			// id 集合 → label 逗号串（options 为候选/用户 {label,value}）
+			namesOf(options: UTSJSONObject[], ids: string[]): string {
+				const names: string[] = []
+				for (let i = 0; i < ids.length; i++) {
+					for (let j = 0; j < options.length; j++) {
+						if ((options[j].getString('value') ?? '') == ids[i]) {
+							names.push(options[j].getString('label') ?? ids[i])
+							break
+						}
+					}
 				}
+				return names.join('、')
+			},
+			openPicker(source: string) {
+				this.pickerSource = source
+				if (source == 'next') {
+					if (this.candidates.length == 0) {
+						this.loadCandidates()
+					}
+					this.pickerTitle = '选择下一节点处理人'
+					this.pickerOptions = this.candidates
+					this.pickerSelected = this.nextNodeIds
+					this.pickerMultiple = true
+				} else if (source == 'cc') {
+					if (this.users.length == 0) {
+						this.loadUsers()
+					}
+					this.pickerTitle = '选择抄送人'
+					this.pickerOptions = this.users
+					this.pickerSelected = this.ccIds
+					this.pickerMultiple = true
+				} else {
+					// 会签加签：多选（对齐 vben select-user ApiSelect multiple）
+					if (this.users.length == 0) {
+						this.loadUsers()
+					}
+					this.pickerTitle = '加签给'
+					this.pickerOptions = this.users
+					this.pickerSelected = [] as string[]
+					this.pickerMultiple = true
+				}
+				this.pickerVisible = true
+			},
+			onPickerOk(vals: string[]) {
+				if (this.pickerSource == 'next') {
+					this.nextNodeIds = vals
+				} else if (this.pickerSource == 'cc') {
+					this.ccIds = vals
+				} else if (this.pickerSource == 'sign') {
+					if (vals.length == 0) {
+						return
+					}
+					if (this.submitting) {
+						return
+					}
+					// 加签直接提交（引擎 toStringList 数组/逗号串双兼容）
+					this.submitting = true
+					uni.showLoading({ title: '加签中……', mask: true })
+					processTaskAddCandidate({
+						processTaskId: this.taskId,
+						processInstanceId: this.processInstanceId,
+						actorIds: vals
+					} as UTSJSONObject).then((_r) => {
+						uni.hideLoading()
+						uni.showToast({ title: '加签成功', icon: 'success' })
+					}).catch((err) => {
+						uni.hideLoading()
+						uni.showToast({ title: this.$strUtil.anyToStr(err), icon: 'none' })
+					}).finally(() => {
+						this.submitting = false
+					})
+				}
+			},
+			onAddSign() {
 				if (this.users.length == 0) {
 					uni.showToast({ title: '用户列表加载中，请稍后', icon: 'none' })
 					this.loadUsers()
 					return
 				}
-				const names: string[] = []
-				for (let i = 0; i < this.users.length; i++) {
-					names.push(this.users[i].getString('label') ?? '')
-				}
-				const self = this
-				uni.showActionSheet({
-					title: '加签给',
-					itemList: names,
-					success: (res: ShowActionSheetSuccess) => {
-						if (res.tapIndex == null) return
-						const idx = parseInt(res.tapIndex.toString())
-						if (idx < 0 || idx >= self.users.length) return
-						const actorId = self.users[idx].getString('value') ?? ''
-						const actorName = self.users[idx].getString('label') ?? ''
-						if (actorId.length == 0) return
-						self.submitting = true
-						uni.showLoading({ title: '加签中……', mask: true })
-						const actorIds: string[] = []
-						actorIds.push(actorId)
-						processTaskAddCandidate({
-							processTaskId: self.taskId,
-							processInstanceId: self.processInstanceId,
-							actorIds: actorIds
-						} as UTSJSONObject).then((_r) => {
-							uni.hideLoading()
-							uni.showToast({ title: '已加签给 ' + actorName, icon: 'success' })
-						}).catch((err) => {
-							uni.hideLoading()
-							uni.showToast({ title: self.$strUtil.anyToStr(err), icon: 'none' })
-						}).finally(() => {
-							self.submitting = false
-						})
-					}
-				})
+				this.openPicker('sign')
 			}
 		}
 	}
@@ -519,6 +785,85 @@
 			color: #333333;
 			flex: 0.7;
 		}
+	}
+}
+/* 审批选项（附件 / 指派 / 抄送）——顶层类，卡片在 .m-card 内，勿嵌进 .m-approve-bar
+   （uni-app x 编译后按祖先上下文串匹配，嵌错层级选择器命不中） */
+.m-opt-row{
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16rpx 0;
+	.m-opt-label{
+		font-size: 26rpx;
+		color: #333333;
+	}
+	.m-opt-upload{
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		width: 180rpx;
+		height: 60rpx;
+		border: 1rpx dashed #2563EB;
+		border-radius: 8rpx;
+		.m-opt-upload-text{
+			margin-left: 8rpx;
+			font-size: 24rpx;
+			color: #2563EB;
+		}
+	}
+}
+.m-opt-file{
+	flex-direction: row;
+	align-items: center;
+	padding: 8rpx 0;
+	.m-opt-file-name{
+		margin-left: 8rpx;
+		font-size: 24rpx;
+		color: #666666;
+	}
+}
+.m-opt-check{
+	flex: 1;
+	flex-direction: row;
+	align-items: center;
+	.m-opt-check-box{
+		width: 34rpx;
+		height: 34rpx;
+		border: 2rpx solid #CCCCCC;
+		border-radius: 6rpx;
+		justify-content: center;
+		align-items: center;
+		.m-opt-check-mark{
+			color: #ffffff;
+			font-size: 22rpx;
+		}
+	}
+	.m-opt-label{
+		margin-left: 12rpx;
+		font-size: 26rpx;
+		color: #333333;
+	}
+}
+.m-opt-pick{
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+	padding: 8rpx 0 16rpx 46rpx;
+	.m-opt-pick-value{
+		font-size: 26rpx;
+		color: #333333;
+		flex: 1;
+		margin-right: 12rpx;
+		text-align: right;
+		lines: 2;
+	}
+	.m-opt-pick-placeholder{
+		font-size: 26rpx;
+		color: #BBBBBB;
+		flex: 1;
+		margin-right: 12rpx;
+		text-align: right;
 	}
 }
 </style>

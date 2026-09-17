@@ -36,6 +36,15 @@
 						</text>
 						<m-icon type="calendar" :size="22" color="#999999"></m-icon>
 					</view>
+					<!-- 多选下拉（checkbox-group 承载，值存逗号串，对齐引擎逗号串/数组双兼容） -->
+					<checkbox-group v-else-if="field.type == 'select' && field.multiple" class="m-form-option-group"
+						@change="onCheckboxChange(field, $event)">
+						<view class="m-form-option" v-for="(o, oi) in field.options" :key="oi">
+							<checkbox :value="(o.getString('value') ?? '')" :checked="isOptionChecked(field, o)" color="#2563EB"
+								style="transform:scale(0.8);" />
+							<text class="m-form-option-text">{{o.getString('label') ?? ''}}</text>
+						</view>
+					</checkbox-group>
 					<!-- 下拉（ActionSheet） -->
 					<view v-else-if="field.type == 'select'" class="m-form-picker" @tap="onOpenSelect(field)">
 						<text :class="(formData.getString(field.field) ?? '') == '' ? 'm-form-placeholder' : 'm-form-value-text'">
@@ -53,7 +62,7 @@
 					<!-- 多选组 -->
 					<checkbox-group v-else-if="field.type == 'checkbox'" class="m-form-option-group" @change="onCheckboxChange(field, $event)">
 						<view class="m-form-option" v-for="(o, oi) in field.options" :key="oi">
-							<checkbox :value="(o.getString('value') ?? '')" color="#2563EB" style="transform:scale(0.8);" />
+							<checkbox :value="(o.getString('value') ?? '')" :checked="isOptionChecked(field, o)" color="#2563EB" style="transform:scale(0.8);" />
 							<text class="m-form-option-text">{{o.getString('label') ?? ''}}</text>
 						</view>
 					</checkbox-group>
@@ -122,9 +131,16 @@
 			};
 		},
 		computed: {
-			// v-for 直接迭代 props 数组 UTS 推断不了类型（error19），包一层显式类型 computed
+			// v-for 直接迭代 props 数组 UTS 推断不了类型（error19），包一层显式类型 computed；
+			// 字段权限 HIDDEN（field.hidden）的行直接不渲染（对齐 vben hide）
 			mFields: (): SchemaField[] => {
-				return this.fields
+				const visible: SchemaField[] = []
+				for (let i = 0; i < this.fields.length; i++) {
+					if (!this.fields[i].hidden) {
+						visible.push(this.fields[i])
+					}
+				}
+				return visible
 			}
 		},
 		watch: {
@@ -195,7 +211,24 @@
 				if (current.length == 0) {
 					return '—'
 				}
-				// 下拉/单选/多选：映射选项文本
+				// 多选（select.multiple / checkbox）：逗号串逐个映射选项 label
+				if ((field.type == 'select' && field.multiple) || field.type == 'checkbox') {
+					const parts = current.split(',')
+					const labels: string[] = []
+					for (let p = 0; p < parts.length; p++) {
+						let matched = parts[p]
+						for (let i = 0; i < field.options.length; i++) {
+							const ov = field.options[i].get('value')
+							if (ov != null && ov.toString() == parts[p]) {
+								matched = field.options[i].getString('label') ?? parts[p]
+								break
+							}
+						}
+						labels.push(matched)
+					}
+					return labels.join('、')
+				}
+				// 下拉/单选：映射选项文本
 				if (field.type == 'select' || field.type == 'radio' || field.type == 'checkbox') {
 					for (let i = 0; i < field.options.length; i++) {
 						const ov = field.options[i].get('value')
@@ -205,6 +238,21 @@
 					}
 				}
 				return current
+			},
+			// 多选回显：当前值（逗号串）拆分后与选项 value 字符串精确比对
+			isOptionChecked(field: SchemaField, o: UTSJSONObject): boolean {
+				const current = this.formData.getString(field.field) ?? ''
+				if (current.length == 0) {
+					return false
+				}
+				const ov = this.optionValueStr(o)
+				const parts = current.split(',')
+				for (let i = 0; i < parts.length; i++) {
+					if (parts[i] == ov) {
+						return true
+					}
+				}
+				return false
 			},
 			selectDisplayText(field: SchemaField): string {
 				const v = this.formData.getString(field.field)
