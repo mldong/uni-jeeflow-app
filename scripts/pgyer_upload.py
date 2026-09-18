@@ -66,9 +66,12 @@ def main():
     desc = sys.argv[2] if len(sys.argv) >= 3 else ""
     api_key = read_api_key()
 
+    # buildType 官方文档值 Android 传 apk（旧值 adhoc 也能通，2026-09-18 对照官方文档对齐）
+    # buildUpdateDescription 才是官方参数名——旧脚本误用 updateDescription，是「更新说明不落库」
+    # 的根因（jeeflow 技能 §4 曾误判为 API 限制，实为参数名写错）。换对名后描述可正常落库。
     r1 = post_form(
         f"{API}/app/getCOSToken",
-        {"_api_key": api_key, "buildType": "adhoc", "updateDescription": desc},
+        {"_api_key": api_key, "buildType": "apk", "buildUpdateDescription": desc},
     )
     if r1.get("code") != 0:
         raise SystemExit("getCOSToken failed: " + json.dumps(r1, ensure_ascii=False))
