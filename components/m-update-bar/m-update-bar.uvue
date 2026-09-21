@@ -1,0 +1,89 @@
+<template>
+	<view v-if="downloadState.active" class="m-upd-bar">
+		<view class="m-upd-bar-head row justify-content-space-between">
+			<text class="m-upd-bar-title">下载新版本 {{percentText}}</text>
+			<text class="m-upd-bar-size">{{sizeText}}</text>
+		</view>
+		<view class="m-upd-bar-track">
+			<view class="m-upd-bar-fill" :style="'width:' + fillWidth + '%'"></view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	// 全局下载进度浮层：数据源 util/update.uts 的模块级 reactive 单例，
+	// 哪个页面发起的下载都看得见，所以挂在能触发检查更新的那几页根部。
+	// 蒸汽模式实弹：fixed 节点会被抬到普通流兄弟之上，且两个 fixed 之间不按声明顺序叠放，
+	// 所以层级只能显式给 z-index，别指望"写在最后就在最上"。
+	import { downloadState } from '@/util/update.uts'
+
+	function clampPercent(): number {
+		const p = downloadState.percent
+		if (p < 0) {
+			return 0
+		}
+		return p > 100 ? 100 : p
+	}
+
+	function toMB(bytes: number): string {
+		return (bytes / 1048576).toFixed(1) + 'MB'
+	}
+
+	const percentText = computed((): string => {
+		return clampPercent().toFixed(0) + '%'
+	})
+
+	const fillWidth = computed((): string => {
+		return clampPercent().toFixed(0)
+	})
+
+	const sizeText = computed((): string => {
+		if (downloadState.total <= 0) {
+			return ''
+		}
+		return toMB(downloadState.received) + ' / ' + toMB(downloadState.total)
+	})
+</script>
+
+<style lang="scss">
+	.m-upd-bar {
+		position: fixed;
+		left: 24rpx;
+		right: 24rpx;
+		bottom: 24rpx;
+		z-index: 9999;
+		background-color: #FFFFFF;
+		border-radius: 16rpx;
+		padding: 20rpx 24rpx;
+		/* 浮层要能从任意底色上浮出来，靠阴影而不是描边 */
+		box-shadow: 0 6rpx 24rpx rgba(0, 0, 0, 0.14);
+	}
+
+	.m-upd-bar-head {
+		align-items: center;
+	}
+
+	.m-upd-bar-title {
+		font-size: 26rpx;
+		color: #333333;
+	}
+
+	.m-upd-bar-size {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.m-upd-bar-track {
+		margin-top: 14rpx;
+		height: 8rpx;
+		background-color: #F1F1F1;
+		border-radius: 4rpx;
+		overflow: hidden;
+	}
+
+	.m-upd-bar-fill {
+		height: 8rpx;
+		background-color: #F1D633;
+		border-radius: 4rpx;
+	}
+</style>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+	xmlns:tools="http://schemas.android.com/tools"
+	package="com.mldong.jeeflow">
+	<!-- 蒸汽(vapor)运行时的 targetSdk 升到 36 后，云端打包不再自动写入 usesCleartextTraffic，
+	     Android 对 targetSdk>=28 默认禁止明文 HTTP，连 http:// 后端会在网络层直接失败。
+	     开发环境允许手输接口地址（含本机 127.0.0.1 联调），故按域名放开的方案不适用。 -->
+	<application android:usesCleartextTraffic="true" />
+	<!-- 检查更新走 uni.installApk 拉起系统安装器，Android 8+ 缺该权限会直接安装失败 -->
+	<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+</manifest>

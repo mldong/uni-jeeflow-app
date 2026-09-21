@@ -113,6 +113,8 @@
 		<!-- #ifdef APP -->
 		</scroll-view>
 		<!-- #endif -->
+		<!-- 下载进度浮层：挂 scroll-view 之外（不随页面滚动，显式 z-index 压页面） -->
+		<m-update-bar></m-update-bar>
 	</view>
 </template>
 <script setup lang="uts">
@@ -122,6 +124,8 @@
 	import { resolveWfIcon } from '@/util/wf_icon_map.uts'
 	import { IS_LOGIN_KEY } from '@/util/const.uts'
 	import { $store } from '@/store/index'
+	// 绑定名与标签名可映射（mUpdateBar ↔ m-update-bar，蒸汽 js 打包 TDZ 坑）
+	import mUpdateBar from '@/components/m-update-bar/m-update-bar.uvue'
 
 	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	const refresherTriggered = ref(false)

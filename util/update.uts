@@ -1,0 +1,223 @@
+// APP 检查更新：数据源后端 /app/appVersion/check（实际由蒲公英提供最新版信息），
+// 下载走 uni.downloadFile、安装走 uni.installApk（均需 REQUEST_INSTALL_PACKAGES 权限）
+// 不弹遮罩：下载态挂在模块级 reactive 上，由 m-update-bar 浮层显示，用户下载期间可继续操作
+import { checkAppVersion } from '@/api/version.uts'
+
+const PLATFORM_ANDROID = 1
+// 当前只服务安卓包，其余平台后端返 data:null（无更新）
+let checking = false
+
+export type UpdateDownloadState = {
+	// 有下载在飞时才渲染浮层
+	active: boolean,
+	// uni 原样给的浮点百分比，取整只在显示层做一次
+	percent: number,
+	received: number,
+	total: number
+}
+
+// 模块级 reactive 单例（同 store/index.uts 的先例）：跨页共读同一份下载态
+export const downloadState = reactive({
+	active: false,
+	percent: 0,
+	received: 0,
+	total: 0
+} as UpdateDownloadState)
+
+// 安装器读的就是这个临时文件，而 installApk 没有「装完了」的回调（实测系统弹「禁止安装」时
+// success/fail 都不触发），所以不能拉起后就删，只能留到下次启动或下次下载前清
+const LAST_APK_KEY = 'update_last_apk_path'
+
+function deleteLastApk() {
+	const cached = uni.getStorageSync(LAST_APK_KEY)
+	if (cached == null) {
+		return
+	}
+	const path = cached.toString()
+	if (path.length == 0) {
+		return
+	}
+	uni.getFileSystemManager().unlink({
+		filePath: path,
+		// 文件可能已被系统回收或本就不存在，删不掉不算错
+		fail: () => {}
+	})
+}
+
+/** 启动时清掉上一次留下的安装包 */
+export function cleanupDownloadedApk() {
+	deleteLastApk()
+}
+
+// 本机安装包 versionCode，取不到按 0 处理（后端会判为需更新，属安全方向）
+export function currentVersionCode(): number {
+	const raw = uni.getAppBaseInfo().appVersionCode
+	if (raw == null) {
+		return 0
+	}
+	const n = parseInt(raw as string)
+	return n > 0 ? n : 0
+}
+
+export function currentVersionName(): string {
+	const raw = uni.getAppBaseInfo().appVersion
+	return raw != null ? (raw as string) : ''
+}
+
+function buildDialogContent(data: UTSJSONObject): string {
+	const lines: string[] = []
+	const size = data.getString('fileSizeInfo')
+	if (size != null && size.length > 0) {
+		lines.push('大小：' + size)
+	}
+	const notes = data.getString('releaseNotes')
+	if (notes != null && notes.length > 0) {
+		lines.push(notes)
+	}
+	return lines.join('\n')
+}
+
+/**
+ * 检查更新。manual=false 为静默检查：无更新与失败都不打扰用户。
+ * 强制更新（后端按蒲公英 forceUpdateVersionNo 判定）时不给「稍后再说」。
+ */
+export function checkAppUpdate(manual: boolean) {
+	if (downloadState.active) {
+		if (manual) {
+			uni.showToast({
+				title: '新版本下载中',
+				icon: 'none'
+			})
+		}
+		return
+	}
+	if (checking) {
+		return
+	}
+	checking = true
+	checkAppVersion(PLATFORM_ANDROID, currentVersionCode()).then((res: any) => {
+		// data:null 被 http 层解成布尔 true，即已是最新版
+		if (res == null || typeof res === 'boolean') {
+			checking = false
+			if (manual) {
+				uni.showToast({
+					title: '已是最新版本',
+					icon: 'none'
+				})
+			}
+			return
+		}
+		const data = res as UTSJSONObject
+		const versionName = data.getString('versionName')
+		const force = data.getBoolean('forceUpdate') == true
+		const title = force ? '发现新版本（需强制更新）' : ('发现新版本 ' + (versionName != null ? versionName : ''))
+		uni.showModal({
+			title: title,
+			content: buildDialogContent(data),
+			showCancel: !force,
+			confirmText: '立即更新',
+			cancelText: '稍后再说',
+			success: (ee: ShowModalSuccess) => {
+				if (!ee.confirm) {
+					checking = false
+					return
+				}
+				const url = data.getString('downloadUrl')
+				downloadAndInstall(url != null ? url : '')
+			},
+			fail: () => {
+				checking = false
+			}
+		})
+	}).catch((e: any) => {
+		checking = false
+		if (manual) {
+			uni.showToast({
+				title: e != null ? e.toString() : '检查更新失败',
+				icon: 'none'
+			})
+		} else {
+			console.log('[update] 静默检查失败：' + (e != null ? e.toString() : ''))
+		}
+	})
+}
+
+function downloadAndInstall(url: string) {
+	// 下载自己接管闸门，checking 交还给上一跳的回调
+	checking = false
+	if (url.length == 0) {
+		uni.showToast({
+			title: '下载地址为空，请稍后再试',
+			icon: 'none'
+		})
+		return
+	}
+	// 新下载前先把上一份清掉，把残留上限压到一个文件
+	deleteLastApk()
+	let settled = false
+	downloadState.active = true
+	downloadState.percent = 0
+	downloadState.received = 0
+	downloadState.total = 0
+	const task = uni.downloadFile({
+		url: url,
+		// 安装包按十兆级计，600s 上限；给足时间比让用户看到「下载中断」划算
+		timeout: 600000,
+		success: (res) => {
+			settled = true
+			downloadState.active = false
+			if (res.statusCode != 200) {
+				uni.showToast({
+					title: '下载失败（' + res.statusCode + '）',
+					icon: 'none'
+				})
+				return
+			}
+			downloadState.percent = 100
+			uni.setStorageSync(LAST_APK_KEY, res.tempFilePath)
+			// 下完先问一句再拉起安装器：用户可能早就切去干别的了
+			uni.showModal({
+				title: '下载完成',
+				content: '新版本已下载完成，是否立即安装？',
+				confirmText: '立即安装',
+				cancelText: '稍后安装',
+				success: (ee: ShowModalSuccess) => {
+					if (ee.confirm) {
+						installApk(res.tempFilePath)
+					}
+				}
+			})
+		},
+		fail: (err) => {
+			settled = true
+			downloadState.active = false
+			console.log('[update] 下载失败：' + err.errMsg)
+			uni.showToast({
+				title: '下载中断，请稍后再试',
+				icon: 'none'
+			})
+		}
+	} as DownloadFileOptions)
+	task.onProgressUpdate((res) => {
+		if (settled) {
+			return
+		}
+		downloadState.percent = res.progress
+		downloadState.received = res.totalBytesWritten
+		downloadState.total = res.totalBytesExpectedToWrite
+	})
+}
+
+function installApk(filePath: string) {
+	uni.installApk({
+		filePath: filePath,
+		fail: (err) => {
+			// 实测多数情况是系统安装器自己弹「出于安全考虑…」，走不到这个分支
+			console.log('[update] installApk 失败：' + err.errMsg)
+			uni.showToast({
+				title: '未能拉起安装，请在系统设置允许安装应用',
+				icon: 'none'
+			})
+		}
+	})
+}

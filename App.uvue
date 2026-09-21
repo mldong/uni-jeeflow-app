@@ -2,6 +2,7 @@
 	// 蒸汽模式迁移：选项式 → 组合式（App 级生命周期宏：onLaunch/onAppShow/onAppHide/onLastPageBackPress/onExit，
 	// 写法对齐官方 hello-uni-app-x App.uvue setup 示例）
 	import { IS_LOGIN_KEY, IS_DEV } from '@/util/const.uts'
+	import { cleanupDownloadedApk, checkAppUpdate } from '@/util/update.uts'
 	// #ifdef APP
 	import { showApiSwitchSheet } from '@/util/api_switch.uts'
 	// #endif
@@ -34,6 +35,12 @@
 
 	onLaunch(() => {
 		console.log('App Launch')
+		// 检查更新：先清上次残留的安装包（installApk 无完成回调，只能留到下次启动清），
+		// 再延后一拍静默检查（避开首帧渲染与 onAppShow 登录守卫的 reLaunch）
+		cleanupDownloadedApk()
+		setTimeout(() => {
+			checkAppUpdate(false)
+		}, 1500)
 		// #ifdef APP
 		// 开发环境全局摇一摇弹接口切换（模拟器无真实摇晃，走登录页长按 logo；production 编译期 IS_DEV=false 不注册）
 		if (IS_DEV) {

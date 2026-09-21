@@ -1,0 +1,14 @@
+import { http, HttpConfig } from '@/util/http.uts'
+/**
+ * C 端检查升级（免登录；后端不查库，转调蒲公英返回最新版信息）
+ * 无更新时后端回 data:null，而 http 层对 data:null 会 resolve(true)，
+ * 调用方须把布尔值当作「已是最新版本」处理
+ */
+export const checkAppVersion = (platform: number, versionCode: number): Promise<any> => {
+	return http.post("/app/appVersion/check", {
+		data: {
+			platform: platform,
+			versionCode: versionCode
+		} as UTSJSONObject
+	} as HttpConfig)
+}

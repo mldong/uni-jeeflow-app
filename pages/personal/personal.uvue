@@ -25,6 +25,8 @@
 	<!-- #ifdef APP -->
 	</scroll-view>
 	<!-- #endif -->
+	<!-- 下载进度浮层：挂 scroll-view 之外（不随页面滚动，显式 z-index 压页面） -->
+	<m-update-bar></m-update-bar>
 </template>
 
 <script setup lang="uts">
@@ -37,6 +39,9 @@
 	import { $store } from '@/store/index'
 	import { $strUtil } from '@/util/str_util'
 	import { responseInterceptor } from '@/util/http.uts'
+	import { checkAppUpdate } from '@/util/update.uts'
+	// 绑定名与标签名可映射（mUpdateBar ↔ m-update-bar，蒸汽 js 打包 TDZ 坑）
+	import mUpdateBar from '@/components/m-update-bar/m-update-bar.uvue'
 
 	const listTitleData = ref<ListTitleType[]>([{
 		key: "message",
@@ -58,6 +63,11 @@
 		icon: 'link',
 		title: '切换接口地址',
 		iconColor: '#2563EB'
+	},{
+		key: "update",
+		icon: 'cloud-download',
+		title: '检查更新',
+		iconColor: '#0EA5E9'
 	},{
 		key: "about",
 		icon: 'info',
@@ -116,7 +126,12 @@
 		uni.showModal({
 			title: '关于',
 			content: 'jeeflow 移动审批\njeeflow 工作流系列管理系统移动端\n现联调：pro 线上 jeeflow-pro.mldong.com\n演示账号 admin / 123456',
-			showCancel: false
+			confirmText: '检查更新',
+			success: (ee: ShowModalSuccess) => {
+				if (ee.confirm) {
+					checkAppUpdate(true)
+				}
+			}
 		})
 	}
 
@@ -159,6 +174,8 @@
 			})
 		} else if (item.key == 'baseurl') {
 			onChangeApiUrl()
+		} else if (item.key == 'update') {
+			checkAppUpdate(true)
 		} else if (item.key == 'about') {
 			onAbout()
 		} else if (item.key == "logout") {
