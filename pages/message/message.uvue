@@ -10,6 +10,15 @@
 				</view>
 			</template>
 		</m-navigation-bar>
+		<!-- 两段式：未读 / 全部（对齐主流 App 消息模块；未读走后端 m_t_EQ_isRead=0 过滤） -->
+		<view class="m-seg-row">
+			<view v-for="(seg, index) in segs" :key="index" class="m-seg" :class="currentTab == index ? 'm-seg-active' : ''" @tap="onSegTap(index)">
+				<text :class="currentTab == index ? 'm-seg-text-active' : 'm-seg-text'">{{seg.label}}</text>
+				<view class="m-seg-badge" v-if="index == 0 && unreadCount > 0">
+					<text class="m-seg-badge-text">{{unreadCount > 99 ? '99+' : unreadCount}}</text>
+				</view>
+			</view>
+		</view>
 		<!-- #ifdef APP -->
 		<scroll-view :scroll-y="true" style="flex:1;" :refresher-enabled="true" :refresher-triggered="refresherTriggered"
 			@refresherrefresh="handleRefresherrefresh" @scrolltolower="loadMore">
@@ -31,7 +40,7 @@
 					<text class="m-list-footer-text">没有更多了</text>
 				</view>
 			</view>
-			<m-empty-data v-else text="还没有消息" subText="审批提醒、抄送通知会出现在这里"></m-empty-data>
+			<m-empty-data v-else :text="currentTab == 0 ? '没有未读消息' : '还没有消息'" :subText="currentTab == 0 ? '未读消息都在这里' : '审批提醒、抄送通知会出现在这里'"></m-empty-data>
 		<!-- #ifdef APP -->
 		</scroll-view>
 		<!-- #endif -->
@@ -39,13 +48,17 @@
 </template>
 <script setup lang="uts">
 	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
-	import { messagePage, messageSetRead } from '@/api/message.uts'
+	import { messagePage, messageSetRead, messageUnreadCount } from '@/api/message.uts'
 	import { refreshTabBadges, applyMsgBadge } from '@/util/badge.uts'
 	import { $strUtil } from '@/util/str_util'
 
-	const pageNum = ref(1)
-	const pageSize = ref(15)
-	const recordCount = ref(0)
+	// 分段：0 未读 / 1 全部（未读走后端 m_t_EQ_isRead=0 过滤，全部不加过滤）
+	const currentTab = ref<number>(0)
+	const segs = ref<{ label: string }[]>([{ label: '未读' }, { label: '全部' }] as { label: string }[])
+	const unreadCount = ref<number>(0)
+	const pageNum = ref<number>(1)
+	const pageSize = ref<number>(15)
+	const recordCount = ref<number>(0)
 	const list = ref<UTSJSONObject[]>([])
 	const refresherTriggered = ref(false)
 	const loading = ref(false)
@@ -76,11 +89,16 @@
 
 	function requestData(): Promise<any> {
 		loading.value = true
+		const param: UTSJSONObject = {
+			pageNum: pageNum.value,
+			pageSize: pageSize.value
+		} as UTSJSONObject
+		if (currentTab.value == 0) {
+			// 未读过滤（后端 m_[alias]_[type]_[column] 通用查询）；.set() 动态加键
+			param.set('m_t_EQ_isRead', 0)
+		}
 		return new Promise<any>((resolve, reject) => {
-			messagePage({
-				pageNum: pageNum.value,
-				pageSize: pageSize.value
-			} as UTSJSONObject).then((res) => {
+			messagePage(param).then((res) => {
 				const data = res as UTSJSONObject
 				recordCount.value = data.getNumber('recordCount') ?? 0
 				if (pageNum.value == 1) {
@@ -102,15 +120,37 @@
 		})
 	}
 
+	function loadUnreadCount() {
+		messageUnreadCount().then((c) => {
+			if (typeof c === 'number') {
+				unreadCount.value = c as number
+			} else if (c != null && typeof c === 'object') {
+				const n = (c as UTSJSONObject).getNumber('count')
+				if (n != null) {
+					unreadCount.value = n
+				}
+			}
+		}).catch((_e) => { })
+	}
+
 	function reload(): Promise<any> {
 		pageNum.value = 1
 		return requestData()
+	}
+
+	function onSegTap(index: number) {
+		if (currentTab.value == index) {
+			return
+		}
+		currentTab.value = index
+		reload()
 	}
 
 	function handleRefresherrefresh() {
 		refresherTriggered.value = true
 		reload().finally(() => {
 			refresherTriggered.value = false
+			loadUnreadCount()
 		})
 	}
 
@@ -140,6 +180,8 @@
 				if (res.confirm) {
 					messageSetRead([] as string[]).then((_r) => {
 						applyMsgBadge(0)
+						unreadCount.value = 0
+						loadUnreadCount()
 						reload()
 						uni.showToast({ title: '已全部标为已读', icon: 'none' })
 					}).catch((err) => {
@@ -151,7 +193,9 @@
 	}
 
 	onShow(() => {
+		// 从详情页返回：可能已标已读，重载当前分段并刷新未读数
 		reload()
+		loadUnreadCount()
 		refreshTabBadges()
 	})
 </script>
@@ -164,6 +208,44 @@
 }
 .m-nav-action{
 	font-size: 26rpx;
+	color: #ffffff;
+}
+.m-seg-row{
+	flex-direction: row;
+	background-color: #ffffff;
+	padding: 16rpx 20rpx;
+}
+.m-seg{
+	flex: 1;
+	flex-direction: row;
+	height: 64rpx;
+	border-radius: 32rpx;
+	justify-content: center;
+	align-items: center;
+}
+.m-seg-active{
+	background-color: #2563EB;
+}
+.m-seg-text{
+	font-size: 28rpx;
+	color: #666666;
+}
+.m-seg-text-active{
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+.m-seg-badge{
+	margin-left: 8rpx;
+	background-color: #EF4444;
+	border-radius: 16rpx;
+	padding: 0 10rpx;
+	height: 32rpx;
+	justify-content: center;
+	align-items: center;
+}
+.m-seg-badge-text{
+	font-size: 20rpx;
 	color: #ffffff;
 }
 .m-msg-list{

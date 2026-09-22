@@ -57,7 +57,7 @@
 	const props = withDefaults(defineProps<Props>(), {
 		dataSource: (): ListTitleType[] => [] as ListTitleType[],
 		rightIcon: 'right',
-		height: 72
+		height: 96
 	})
 
 	const emit = defineEmits(['itemTap', 'itemLongpress'])
