@@ -21,6 +21,11 @@
 					<text class="m-info-label">当前节点</text>
 					<text class="m-info-value">{{taskDisplayName}}</text>
 				</view>
+				<!-- 退回修改·重提直返：返回节点只读（由引擎钉死） -->
+				<view class="m-info-row" v-if="isDirectReapply">
+					<text class="m-info-label">重新提交后返回</text>
+					<text class="m-info-value">{{reapplyTargetText}}</text>
+				</view>
 				<view class="m-info-row">
 					<text class="m-info-label">发起时间</text>
 					<text class="m-info-value">{{instanceCreateTime}}</text>
@@ -59,7 +64,7 @@
 					<m-icon type="paperclip" :size="16" color="#16A34A"></m-icon>
 					<text class="m-opt-file-name">{{f}}</text>
 				</view>
-				<view class="m-opt-row" v-if="!isCountersign">
+				<view class="m-opt-row" v-if="!isCountersign && !isDirectReapply">
 					<view class="m-opt-check" @tap="toggleAssign">
 						<view class="m-opt-check-box" :style="checkStyle(isAssignNext)">
 							<text v-if="isAssignNext" class="m-opt-check-mark">✓</text>
@@ -67,7 +72,7 @@
 						<text class="m-opt-label" style="margin-left: 12rpx;">指定下一节点处理人</text>
 					</view>
 				</view>
-				<view class="m-opt-pick" v-if="isAssignNext && !isCountersign" @tap="openPicker('next')">
+				<view class="m-opt-pick" v-if="isAssignNext && !isCountersign && !isDirectReapply" @tap="openPicker('next')">
 					<text :class="nextNodeNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{nextNodeNames.length > 0 ? nextNodeNames : '请选择下一节点处理人'}}</text>
 					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
 				</view>
@@ -114,7 +119,7 @@
 			<input class="m-approve-input" v-model="comment" placeholder="请输入审批意见" placeholder-class="m-form-placeholder" />
 			<view class="m-approve-btns" v-if="isFirstTaskNode">
 				<!-- 蒸汽模式：原 ：first-child 去边距改内联（运行时不支持伪类） -->
-				<button class="m-btn m-btn-agree" style="margin-left: 0;" @tap="doExecute(0)">重新提交</button>
+				<button class="m-btn m-btn-agree" style="margin-left: 0;" @tap="onReSubmit">重新提交</button>
 			</view>
 				<!-- 会签：同意 / 不同意(20) / 加签 -->
 				<view class="m-approve-btns" v-else-if="isCountersign">
@@ -151,6 +156,9 @@
 	const instanceCreateTime = ref('')
 	const executable = ref(false)
 	const isFirstTaskNode = ref(false)
+	// 退回修改·重提直返：返回节点（编码/显示名）。有值 ⇒ 重提走 submitType=5 且不派下一节点处理人
+	const reapplySourceNode = ref('')
+	const reapplyNodeName = ref('')
 	// 对齐 vben：performType===1 为会签
 	const performType = ref<number>(0)
 	const formKey = ref('')
@@ -189,6 +197,20 @@
 
 	const isCountersign = computed((): boolean => {
 		return performType.value == 1
+	})
+	// 直返待办：申请待办上带引擎的 `_reapplyContext`（或门面投影 reapplyTarget）
+	const isDirectReapply = computed((): boolean => {
+		return reapplySourceNode.value.length > 0
+	})
+	// 返回节点显示名：投影给了显示名就用；否则按流程图节点文本回填，再退节点编码
+	const reapplyTargetText = computed((): string => {
+		if (reapplySourceNode.value.length == 0) {
+			return ''
+		}
+		if (reapplyNodeName.value.length > 0) {
+			return reapplyNodeName.value
+		}
+		return resolveNodeText(reapplySourceNode.value)
 	})
 	// 首任务节点待办：业务表单可编辑（重新提交，对齐 vben detail.vue view=false）
 	const canEditBusiness = computed((): boolean => {
@@ -237,6 +259,70 @@
 		})
 	}
 
+	// 流程图节点编码 → 节点显示名（找不到节点回落编码）
+	function resolveNodeText(node: string): string {
+		const g = graph.value
+		if (g == null) {
+			return node
+		}
+		const nodes = g!.getArray<UTSJSONObject>('nodes')
+		if (nodes == null) {
+			return node
+		}
+		for (let i = 0; i < nodes!.length; i++) {
+			const n = nodes![i]
+			const id = n.getString('id') ?? ''
+			const props = n.getJSON('properties')
+			const propName = props != null ? (props!.getString('name') ?? '') : ''
+			if (id != node && propName != node) {
+				continue
+			}
+			const text = n.getJSON('text')
+			const tv = text != null ? (text!.getString('value') ?? '') : ''
+			if (tv.length > 0) {
+				return tv
+			}
+			const dn = props != null ? (props!.getString('displayName') ?? '') : ''
+			if (dn.length > 0) {
+				return dn
+			}
+			return node
+		}
+		return node
+	}
+
+	// 解析直返返回目标：① 门面只读投影 reapplyTarget ② 引擎控制键 ext._reapplyContext
+	function readReapplyTarget(task: UTSJSONObject): void {
+		reapplySourceNode.value = ''
+		reapplyNodeName.value = ''
+		const proj = task.getJSON('reapplyTarget')
+		if (proj != null) {
+			const pn = proj!.getString('node') ?? (proj!.getString('sourceNode') ?? '')
+			if (pn.length > 0) {
+				reapplySourceNode.value = pn
+				reapplyNodeName.value = proj!.getString('displayName') ?? ''
+				return
+			}
+		}
+		const ext = task.getJSON('ext')
+		if (ext == null) {
+			return
+		}
+		const ctx = ext!.getJSON('_reapplyContext')
+		if (ctx == null) {
+			return
+		}
+		const mode = ctx!.getString('mode') ?? ''
+		if (mode.length > 0 && mode != 'RETURN_TO_SOURCE') {
+			return
+		}
+		const sourceNode = ctx!.getString('sourceNode') ?? ''
+		if (sourceNode.length == 0) {
+			return
+		}
+		reapplySourceNode.value = sourceNode
+	}
+
 	async function loadAll(): Promise<void> {
 		if (taskId.value.length == 0) {
 			return
@@ -256,6 +342,8 @@
 			if (ext != null) {
 				isFirstTaskNode.value = ext!.getBoolean('isFirstTaskNode') == true
 			}
+			// 退回修改·重提直返：本待办有没有返回目标（只读）
+			readReapplyTarget(task)
 			// taskModel.form（节点表单 key）优先于任务 formKey
 			const taskModel = task.getJSON('taskModel')
 			if (taskModel != null) {
@@ -373,6 +461,12 @@
 		return out
 	}
 
+	// 申请待办「重新提交」：直返待办 submitType=5（引擎按 _reapplyContext 回来源节点）；
+	// 无直返目标仍是既有的 submitType=0（申请节点出边重提）
+	function onReSubmit(): void {
+		doExecute(isDirectReapply.value ? 5 : 0)
+	}
+
 	function doExecute(submitType: number, taskName: string = ''): void {
 		if (submitting.value) {
 			return
@@ -382,8 +476,8 @@
 			uni.showToast({ title: '请填写审批意见', icon: 'none' })
 			return
 		}
-		// 指派/抄送勾选后必须选人（对齐 vben selectRequired）
-		if (isAssignNext.value && !isCountersign.value && nextNodeIds.value.length == 0) {
+		// 指派/抄送勾选后必须选人（对齐 vben selectRequired）；直返重提不派下一节点处理人 ⇒ 不校验该项
+		if (!isDirectReapply.value && isAssignNext.value && !isCountersign.value && nextNodeIds.value.length == 0) {
 			uni.showToast({ title: '请选择下一节点处理人', icon: 'none' })
 			return
 		}
@@ -402,8 +496,8 @@
 		if (approvalFileIds.value.length > 0) {
 			param['tf_approvalAttachment'] = approvalFileIds.value
 		}
-		// 指定下一节点处理人 / 抄送（引擎对数组与逗号串双兼容）；跳转(4)剔除指派（对齐 vben）
-		if (submitType != 4 && !isCountersign.value && isAssignNext.value) {
+		// 指定下一节点处理人 / 抄送（引擎对数组与逗号串双兼容）；跳转(4)与直返重提(5)剔除指派（对齐 vben）
+		if (submitType != 4 && submitType != 5 && !isCountersign.value && isAssignNext.value) {
 			param['tf_isAssignNextNodeOperator'] = true
 			param['tf_nextNodeOperator'] = nextNodeIds.value
 		}
@@ -411,15 +505,18 @@
 			param['tf_isCc'] = true
 			param['tf_ccActors'] = ccIds.value
 		}
-		// 首节点重新提交：业务字段带 f_ 前缀重交 + 发起附加映射 tf_（对齐 vben detail.vue onConfirm）
-		if (submitType == 0) {
+		// 首节点重新提交(0) / 直返重提(5)：业务字段带 f_ 前缀重交 + 发起附加映射 tf_（对齐 vben detail.vue onConfirm）
+		if (submitType == 0 || submitType == 5) {
 			const biz = withProcessFormPrefix(collectBusinessFormData())
 			biz.toMap().forEach((value, key) => {
 				param[key] = value
 			})
-			const nno = formData.value.get('f_nextNodeOperator')
-			if (nno != null) {
-				param['tf_nextNodeOperator'] = nno!
+			// 直返重提：下一节点由引擎钉死，operator 覆写参数一个都不发
+			if (submitType == 0) {
+				const nno = formData.value.get('f_nextNodeOperator')
+				if (nno != null) {
+					param['tf_nextNodeOperator'] = nno!
+				}
 			}
 			const cca = formData.value.get('f_ccActors')
 			if (cca != null) {

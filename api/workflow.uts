@@ -93,7 +93,9 @@ export const processTaskDetail = (id: string): Promise<any> => {
 	} as UTSJSONObject)
 }
 // 审批办理 {processTaskId, submitType, tf_approvalComment, ...}
-// submitType：0 APPLY(重新提交) / 1 AGREE / 2 REJECT / 3 ROLLBACK / 4 JUMP(+taskName) / 6 ROLLBACK_TO_OPERATOR / 20 COUNTERSIGN_DISAGREE
+// submitType：0 APPLY(普通重新提交) / 1 AGREE / 2 REJECT / 3 ROLLBACK / 4 JUMP(+taskName) / 5 RE_APPLY(直返重提)
+//            / 6 ROLLBACK_TO_OPERATOR / 20 COUNTERSIGN_DISAGREE
+// 直返待办（ext._reapplyContext）只接受 5，且不得带下一节点处理人覆写参数。
 export const processTaskExecute = (param: UTSJSONObject): Promise<any> => {
 	return wfPost("processTask/execute", param)
 }
