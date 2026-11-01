@@ -23,12 +23,12 @@
 					<!-- 文本 / 数字 -->
 					<input v-if="field.type == 'input' || field.type == 'number'" class="m-form-input"
 						:type="field.type == 'number' ? 'number' : 'text'"
-						:value="formData.getString(field.field) ?? ''"
+						:value="currentStr(field)"
 						:placeholder="field.placeholder" placeholder-class="m-form-placeholder"
 						@input="onInput(field, $event)" />
 					<!-- 多行文本 -->
 					<textarea v-else-if="field.type == 'textarea'" class="m-form-textarea"
-						:value="formData.getString(field.field) ?? ''"
+						:value="currentStr(field)"
 						:placeholder="field.placeholder" placeholder-class="m-form-placeholder"
 						@input="onInput(field, $event)" />
 					<!-- 日期（点击弹 picker） -->
@@ -42,14 +42,14 @@
 					<checkbox-group v-else-if="field.type == 'select' && field.multiple" class="m-form-option-group"
 						@change="onCheckboxChange(field, $event)">
 						<view class="m-form-option" v-for="(o, oi) in field.options" :key="oi">
-							<checkbox :value="(o.getString('value') ?? '')" :checked="isOptionChecked(field, o)" color="#2563EB"
+							<checkbox :value="optionValueStr(o)" :checked="isOptionChecked(field, o)" color="#2563EB"
 								style="transform:scale(0.8);" />
 							<text class="m-form-option-text">{{o.getString('label') ?? ''}}</text>
 						</view>
 					</checkbox-group>
 					<!-- 下拉（ActionSheet） -->
 					<view v-else-if="field.type == 'select'" class="m-form-picker" @tap="onOpenSelect(field)">
-						<text :class="(formData.getString(field.field) ?? '') == '' ? 'm-form-placeholder' : 'm-form-value-text'">
+						<text :class="currentStr(field) == '' ? 'm-form-placeholder' : 'm-form-value-text'">
 							{{selectDisplayText(field)}}
 						</text>
 						<m-icon type="bottom" :size="20" color="#999999"></m-icon>
@@ -57,14 +57,14 @@
 					<!-- 单选组 -->
 					<radio-group v-else-if="field.type == 'radio'" class="m-form-option-group" @change="onRadioChange(field, $event)">
 						<view class="m-form-option" v-for="(o, oi) in field.options" :key="oi">
-							<radio :value="(o.getString('value') ?? '')" :checked="formData.getString(field.field) == (o.getString('value') ?? '')" color="#2563EB" style="transform:scale(0.8);" />
+							<radio :value="optionValueStr(o)" :checked="currentStr(field) == optionValueStr(o)" color="#2563EB" style="transform:scale(0.8);" />
 							<text class="m-form-option-text">{{o.getString('label') ?? ''}}</text>
 						</view>
 					</radio-group>
 					<!-- 多选组 -->
 					<checkbox-group v-else-if="field.type == 'checkbox'" class="m-form-option-group" @change="onCheckboxChange(field, $event)">
 						<view class="m-form-option" v-for="(o, oi) in field.options" :key="oi">
-							<checkbox :value="(o.getString('value') ?? '')" :checked="isOptionChecked(field, o)" color="#2563EB" style="transform:scale(0.8);" />
+							<checkbox :value="optionValueStr(o)" :checked="isOptionChecked(field, o)" color="#2563EB" style="transform:scale(0.8);" />
 							<text class="m-form-option-text">{{o.getString('label') ?? ''}}</text>
 						</view>
 					</checkbox-group>
@@ -190,6 +190,14 @@
 	}
 
 	// ── 展示辅助 ────────────────────────────────────────────────
+	// 当前值取字符串：UTS 的 getString 取不到数值型值（数字列、dict dataType=2 的 int 值），
+	// 与 displayText 同源，否则可编辑控件回显与选中态会静默落空
+	function currentStr(field: SchemaField): string {
+		const v = props.formData.getString(field.field)
+		const n = props.formData.getNumber(field.field)
+		return v != null && v.length > 0 ? v : (n != null ? n.toString() : '')
+	}
+
 	function displayText(field: SchemaField): string {
 		const v = props.formData.getString(field.field)
 		const n = props.formData.getNumber(field.field)
@@ -237,7 +245,7 @@
 
 	// 多选回显：当前值（逗号串）拆分后与选项 value 字符串精确比对
 	function isOptionChecked(field: SchemaField, o: UTSJSONObject): boolean {
-		const current = props.formData.getString(field.field) ?? ''
+		const current = currentStr(field)
 		if (current.length == 0) {
 			return false
 		}
