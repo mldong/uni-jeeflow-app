@@ -23,6 +23,11 @@
 				<view class="m-timeline-comment" v-if="commentText(item) != ''">
 					<text class="m-timeline-comment-text">{{commentText(item)}}</text>
 				</view>
+				<!-- 后加签账本（tf_addSignHistory）：附加信息行，不占动作徽标/意见的坑（规范 06 §2.7） -->
+				<view class="m-timeline-extra" v-for="(h, hi) in addSignHistory(item)" :key="'as' + hi">
+					<text class="m-timeline-extra-text">{{addSignHistoryText(h)}}</text>
+					<text class="m-timeline-extra-time" v-if="addSignHistoryTime(h) != ''">· {{addSignHistoryTime(h)}}</text>
+				</view>
 			</view>
 		</view>
 		<view v-if="records.length == 0">
@@ -34,6 +39,7 @@
 <script setup lang="uts">
 	// 蒸汽模式迁移：选项式 → 组合式（蒸汽仅支持组合式 API）
 	import { userSelectRows } from '@/api/user.uts'
+	import { $strUtil } from '@/util/str_util.uts'
 
 	type Props = {
 		// approvalRecord 行：对齐 vben approval-record.vue → 操作人用 ext.u_realName
@@ -75,6 +81,85 @@
 			if (c2 != null && c2.length > 0) return c2!
 		}
 		return ''
+	}
+
+	// ── 后加签账本（规范 06 §2.7 tf_addSignHistory：List<Map>，每项 {round,fromActor,toActors,time,operator}）──
+	// 取数位与转办留痕同族：审批记录行的变量出口是 ext（无则 variable 副本），不是任务表单切片 taskFormData。
+	// 形态宽松解析（对象数组 / 某栈序列化成 JSON 字符串都收），解析失败＝不渲染这行。
+	function parseAddSignHistory(vars: UTSJSONObject): UTSJSONObject[] | null {
+		const raw = vars.get('tf_addSignHistory')
+		if (raw == null) {
+			return null
+		}
+		try {
+			const arr = vars.getArray<UTSJSONObject>('tf_addSignHistory')
+			if (arr != null) {
+				return arr!
+			}
+		} catch (e) {
+			// 非对象数组：落到字符串解析
+		}
+		const s = raw!.toString()
+		if (!s.startsWith('[')) {
+			return null
+		}
+		try {
+			const wrapped = JSON.parse('{"h":' + s + '}') as UTSJSONObject
+			return wrapped!.getArray<UTSJSONObject>('h')
+		} catch (e2) {
+			return null
+		}
+	}
+
+	function addSignHistory(item: UTSJSONObject): UTSJSONObject[] {
+		const none: UTSJSONObject[] = []
+		let list: UTSJSONObject[] | null = null
+		const ext = item.getJSON('ext')
+		if (ext != null) {
+			list = parseAddSignHistory(ext!)
+		}
+		if (list == null) {
+			const variable = item.getJSON('variable')
+			if (variable != null) {
+				list = parseAddSignHistory(variable!)
+			}
+		}
+		if (list == null) {
+			return none
+		}
+		return list!
+	}
+
+	// 人名列表串：['a','b'] / "a,b" / Kotlin 的 "[a, b]" 一律读成「a、b」
+	function targetsText(v: any | null): string {
+		if (v == null) {
+			return ''
+		}
+		let s = v!.toString()
+		if (s.startsWith('[') && s.endsWith(']')) {
+			s = s.substring(1, s.length - 1)
+		}
+		const parts = s.split(',')
+		const names: string[] = []
+		for (let i = 0; i < parts.length; i++) {
+			const p = parts[i].trim()
+			if (p.length > 0) {
+				names.push(p)
+			}
+		}
+		return names.join('、')
+	}
+
+	// 一行文案：「第 N 轮加签给 X、Y」（与 submitTypeLabel 同族写死，无字典服务）
+	function addSignHistoryText(h: UTSJSONObject): string {
+		const round = $strUtil.anyToStr(h.get('round'))
+		const heads = round.length > 0 ? ('第' + round + '轮') : '加签'
+		const to = targetsText(h.get('toActors'))
+		return heads + '加签给' + (to.length > 0 ? to : '-')
+	}
+
+	function addSignHistoryTime(h: UTSJSONObject): string {
+		return $strUtil.toStr(h.getString('time'))
 	}
 
 	function operatorText(item: UTSJSONObject): string {
@@ -224,5 +309,22 @@
 	.m-timeline-comment-text {
 		font-size: 26rpx;
 		color: #555555;
+	}
+
+	.m-timeline-extra {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 8rpx;
+	}
+
+	.m-timeline-extra-text {
+		font-size: 24rpx;
+		color: #2563EB;
+	}
+
+	.m-timeline-extra-time {
+		font-size: 22rpx;
+		color: #999999;
+		margin-left: 10rpx;
 	}
 </style>

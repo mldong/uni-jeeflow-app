@@ -64,7 +64,7 @@
 					<m-icon type="paperclip" :size="16" color="#16A34A"></m-icon>
 					<text class="m-opt-file-name">{{f}}</text>
 				</view>
-				<view class="m-opt-row" v-if="!isCountersign && !isDirectReapply">
+				<view class="m-opt-row" v-if="showNextNodeGroup">
 					<view class="m-opt-check" @tap="toggleAssign">
 						<view class="m-opt-check-box" :style="checkStyle(isAssignNext)">
 							<text v-if="isAssignNext" class="m-opt-check-mark">✓</text>
@@ -72,8 +72,23 @@
 						<text class="m-opt-label" style="margin-left: 12rpx;">指定下一节点处理人</text>
 					</view>
 				</view>
-				<view class="m-opt-pick" v-if="isAssignNext && !isCountersign && !isDirectReapply" @tap="openPicker('next')">
+				<view class="m-opt-pick" v-if="showNextNodeGroup && isAssignNext" @tap="openPicker('next')">
 					<text :class="nextNodeNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{nextNodeNames.length > 0 ? nextNodeNames : '请选择下一节点处理人'}}</text>
+					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
+				</view>
+				<!-- 后加签（可重复）·「加签给下一位」：仅当前节点 properties.allowAddSign 为真才出现。
+				     文案不与既有「加签」（并加签，会签按钮）撞名（方案 §8）。
+				     与「指定下一节点处理人」互斥（规范 06 §2.7：两键同传服务端报错），第一步＝勾其一另一组整组隐藏并清值 -->
+				<view class="m-opt-row" v-if="allowAddSign && !isAssignNext">
+					<view class="m-opt-check" @tap="toggleAddSign">
+						<view class="m-opt-check-box" :style="checkStyle(isAddSign)">
+							<text v-if="isAddSign" class="m-opt-check-mark">✓</text>
+						</view>
+						<text class="m-opt-label" style="margin-left: 12rpx;">加签给下一位</text>
+					</view>
+				</view>
+				<view class="m-opt-pick" v-if="allowAddSign && !isAssignNext && isAddSign" @tap="openPicker('addSign')">
+					<text :class="addSignNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{addSignNames.length > 0 ? addSignNames : '请选择加签给下一位'}}</text>
 					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
 				</view>
 				<view class="m-opt-row">
@@ -182,6 +197,11 @@
 	// 指定下一节点处理人（普通节点；候选人来自 /wf/processTask/candidatePage）
 	const isAssignNext = ref(false)
 	const nextNodeIds = ref<string[]>([])
+	// 后加签（可重复）·「加签给下一位」：勾选项 + 已选后继办理人（多选，载荷 tf_addSignOperators）
+	const isAddSign = ref(false)
+	const addSignIds = ref<string[]>([])
+	// 当前任务所在节点编码（taskVo.taskName；回落 taskModel.name / 显示名），用于在流程 JSON 里定位节点开关
+	const taskNodeName = ref('')
 	// 抄送（人员来自 /sys/user/select）
 	const isCc = ref(false)
 	const ccIds = ref<string[]>([])
@@ -201,6 +221,65 @@
 	// 直返待办：申请待办上带引擎的 `_reapplyContext`（或门面投影 reapplyTarget）
 	const isDirectReapply = computed((): boolean => {
 		return reapplySourceNode.value.length > 0
+	})
+	// 开关值容错读取：JSON 里可能是布尔 true、也可能被某栈序列化成 1/'1'/'true'
+	// （判据与 jeeflow-ui helpers.nodeAllowsAddSign 同形；缺省/其它值一律按"没开"）
+	function truthyFlag(v: any | null): boolean {
+		if (v == null) {
+			return false
+		}
+		const s = v!.toString()
+		return s == 'true' || s == '1'
+	}
+
+	// 节点是否开了「后加签（可重复）」：在流程 JSON 的任务节点里按节点编码定位（id / properties.name /
+	// text.value 三处匹配，同 jeeflow-ui findTaskNode），读该节点 properties.allowAddSign。
+	function nodeAllowsAddSign(g: UTSJSONObject | null, nodeName: string): boolean {
+		if (g == null || nodeName.length == 0) {
+			return false
+		}
+		const nodes = g!.getArray<UTSJSONObject>('nodes')
+		if (nodes == null) {
+			return false
+		}
+		for (let i = 0; i < nodes!.length; i++) {
+			const n = nodes![i]
+			// 节点判据与 jeeflow-ui isTaskType 同尺（'snaker:task' 与裸 'task' 两形都认）
+			const ntype = n.getString('type') ?? ''
+			if (ntype != 'snaker:task' && ntype != 'task') {
+				continue
+			}
+			const props = n.getJSON('properties')
+			const pname = props != null ? (props!.getString('name') ?? '') : ''
+			const ntext = n.getJSON('text')
+			const tval = ntext != null ? (ntext!.getString('value') ?? '') : ''
+			const id = n.getString('id') ?? ''
+			if (id != nodeName && pname != nodeName && tval != nodeName) {
+				continue
+			}
+			return props != null && truthyFlag(props!.get('allowAddSign'))
+		}
+		return false
+	}
+
+	// 后加签显隐闸：当前节点 properties.allowAddSign 为真才开（规范 02 §4.3）。
+	// 读的是已随实例详情载到的流程 JSON（graph = processInstance/detail 的 jsonObject），
+	// 不吃后端投影（方案 §8：不为一枚布尔给 todoList 加逐行解析）；
+	// 首任务节点/直返重提/会签一律不开——前两者是发起·重提语义，会签走既有「加签」（并加签）按钮，
+	// 且规范禁止会签节点配 allowAddSign。定位不到节点 ⇒ 一律按"没开"处理，界面与改动前逐字一致。
+	const allowAddSign = computed((): boolean => {
+		if (isFirstTaskNode.value || isDirectReapply.value || isCountersign.value) {
+			return false
+		}
+		return nodeAllowsAddSign(graph.value, taskNodeName.value)
+	})
+	// 生效中的加签选择（闸关时残留勾选一律视同未启用，提交侧据此只发一组键）
+	const addSignActive = computed((): boolean => {
+		return allowAddSign.value && isAddSign.value
+	})
+	// 「加签给下一位」为真时整组隐藏下一节点指派（互斥第一步）
+	const showNextNodeGroup = computed((): boolean => {
+		return !isCountersign.value && !isDirectReapply.value && !addSignActive.value
 	})
 	// 返回节点显示名：投影给了显示名就用；否则按流程图节点文本回填，再退节点编码
 	const reapplyTargetText = computed((): string => {
@@ -334,6 +413,23 @@
 			uni.hideLoading()
 			const task = res as UTSJSONObject
 			taskDisplayName.value = task.getString('displayName') ?? ''
+			// 节点编码：taskVo.taskName 为准（模型节点 id），回落 taskModel.name / 显示名
+			// —— 显示名也能命中（nodeAllowsAddSign 三处匹配），但优先编码，避免同名节点误判
+			const tm = task.getJSON('taskModel')
+			let node = task.getString('taskName') ?? ''
+			if (node.length == 0) {
+				node = tm != null ? (tm!.getString('name') ?? '') : ''
+			}
+			if (node.length == 0) {
+				node = taskDisplayName.value
+			}
+			taskNodeName.value = node
+			// 任务详情本就带流程 JSON（spec 06 · processTask/detail 的 jsonObject）：先拿来用，
+			// 让 allowAddSign 显隐闸不必等实例详情；实例详情回来后仍以它为准（同一份定义快照）
+			const taskGraph = task.getJSON('jsonObject')
+			if (taskGraph != null) {
+				graph.value = taskGraph!
+			}
 			processInstanceId.value = task.getString('processInstanceId') ?? ''
 			executable.value = task.getBoolean('executable') == true
 			formKey.value = task.getString('formKey') ?? ''
@@ -476,9 +572,18 @@
 			uni.showToast({ title: '请填写审批意见', icon: 'none' })
 			return
 		}
+		// 两组互斥的最终判定（对齐 jeeflow-ui collectTf / vben5 task-form）：
+		// 加签是「同意」的附属效果 ⇒ 只在同意(1)生效；不同意/退回/跳转一律不发加签键，
+		// 且加签启用时不发下一节点指派键、反之亦然——隐藏不等于值消失，未启用那组的键在此处就不写进 payload。
+		const addSignOn = addSignActive.value && submitType == 1
+		const nextOn = showNextNodeGroup.value && isAssignNext.value
 		// 指派/抄送勾选后必须选人（对齐 vben selectRequired）；直返重提不派下一节点处理人 ⇒ 不校验该项
-		if (!isDirectReapply.value && isAssignNext.value && !isCountersign.value && nextNodeIds.value.length == 0) {
+		if (nextOn && nextNodeIds.value.length == 0) {
 			uni.showToast({ title: '请选择下一节点处理人', icon: 'none' })
+			return
+		}
+		if (addSignOn && addSignIds.value.length == 0) {
+			uni.showToast({ title: '请选择加签给下一位', icon: 'none' })
 			return
 		}
 		if (isCc.value && ccIds.value.length == 0) {
@@ -497,9 +602,15 @@
 			param['tf_approvalAttachment'] = approvalFileIds.value
 		}
 		// 指定下一节点处理人 / 抄送（引擎对数组与逗号串双兼容）；跳转(4)与直返重提(5)剔除指派（对齐 vben）
-		if (submitType != 4 && submitType != 5 && !isCountersign.value && isAssignNext.value) {
+		if (nextOn && submitType != 4 && submitType != 5) {
 			param['tf_isAssignNextNodeOperator'] = true
 			param['tf_nextNodeOperator'] = nextNodeIds.value
+		}
+		// 后加签（可重复）：tf_addSignOperators 数组（规范 06 §2.7），submitType 仍是原有同意(1)；
+		// 与 tf_nextNodeOperator 互斥 ⇒ nextOn 为假时上一段根本不写那两个键，这里不再补删
+		if (addSignOn) {
+			param['tf_isAddSign'] = true
+			param['tf_addSignOperators'] = addSignIds.value
 		}
 		if (isCc.value) {
 			param['tf_isCc'] = true
@@ -512,7 +623,8 @@
 				param[key] = value
 			})
 			// 直返重提：下一节点由引擎钉死，operator 覆写参数一个都不发
-			if (submitType == 0) {
+			// 加签启用时同样不补 tf_nextNodeOperator（重提路径的 f_ 回显是真实残留源，互斥第二步在此挡死）
+			if (submitType == 0 && !addSignOn) {
 				const nno = formData.value.get('f_nextNodeOperator')
 				if (nno != null) {
 					param['tf_nextNodeOperator'] = nno!
@@ -608,6 +720,10 @@
 	const ccNames = computed((): string => {
 		return namesOf(users.value, ccIds.value)
 	})
+	// 加签人选显示名（数据源与下一节点指派同取 candidatePage，形状照 vben5 同位组）
+	const addSignNames = computed((): string => {
+		return namesOf(candidates.value, addSignIds.value)
+	})
 
 	function onMoreActions(): void {
 		uni.showActionSheet({
@@ -650,7 +766,8 @@
 				}
 			}
 			// 选人弹层已打开时补选项（用户列表异步晚于弹层）
-			if (pickerVisible.value && pickerSource.value != 'next') {
+			// 只喂抄送/会签加签两源：addSign（后加签）用 candidatePage，被这里覆盖成 /sys/user/page 会串数据源
+			if (pickerVisible.value && (pickerSource.value == 'cc' || pickerSource.value == 'sign')) {
 				pickerOptions.value = users.value
 			}
 		}).catch((_e) => { })
@@ -663,6 +780,23 @@
 
 	function toggleAssign(): void {
 		isAssignNext.value = !isAssignNext.value
+		// 互斥第一步（勾其一则另一组隐藏并清空值）：隐藏不等于值消失，残留值会进 payload
+		if (isAssignNext.value && (isAddSign.value || addSignIds.value.length > 0)) {
+			isAddSign.value = false
+			addSignIds.value = [] as string[]
+		}
+	}
+
+	function toggleAddSign(): void {
+		if (!allowAddSign.value) {
+			// 闸关（含 graph 未到位的瞬时态）不接受勾选，避免勾上后闸再翻转把残留带进提交
+			return
+		}
+		isAddSign.value = !isAddSign.value
+		if (isAddSign.value && (isAssignNext.value || nextNodeIds.value.length > 0)) {
+			isAssignNext.value = false
+			nextNodeIds.value = [] as string[]
+		}
 	}
 
 	function toggleCc(): void {
@@ -726,7 +860,8 @@
 				}
 			}
 			candidates.value = opts
-			if (pickerVisible.value && pickerSource.value == 'next') {
+			// 下一节点指派与后加签同取 candidatePage：候选异步晚于弹层到位时两边都要补上
+			if (pickerVisible.value && (pickerSource.value == 'next' || pickerSource.value == 'addSign')) {
 				pickerOptions.value = candidates.value
 			}
 		}).catch((_e) => {
@@ -752,6 +887,15 @@
 			pickerOptions.value = users.value
 			pickerSelected.value = ccIds.value
 			pickerMultiple.value = true
+		} else if (source == 'addSign') {
+			// 后加签选人：数据源沿用 candidatePage（与 vben5 / jeeflow-ui 同位组一致），多选
+			if (candidates.value.length == 0) {
+				loadCandidates()
+			}
+			pickerTitle.value = '加签给下一位'
+			pickerOptions.value = candidates.value
+			pickerSelected.value = addSignIds.value
+			pickerMultiple.value = true
 		} else {
 			// 会签加签：多选（对齐 vben select-user ApiSelect multiple）
 			if (users.value.length == 0) {
@@ -768,6 +912,8 @@
 	function onPickerOk(vals: string[]): void {
 		if (pickerSource.value == 'next') {
 			nextNodeIds.value = vals
+		} else if (pickerSource.value == 'addSign') {
+			addSignIds.value = vals
 		} else if (pickerSource.value == 'cc') {
 			ccIds.value = vals
 		} else if (pickerSource.value == 'sign') {
