@@ -48,6 +48,14 @@
 					<text class="m-info-value">{{row.getString('value') ?? ''}}</text>
 				</view>
 			</view>
+			<!-- 征询未收齐：办理动作整排置灰，这里把「为什么点不动＋收到几张」讲明白（issues/247）。
+			     唯一恢复出口＝撤回动态会签（未答成员行清场、已交意见保留） -->
+			<view class="m-card" v-if="executable && countersignWaiting">
+				<text class="m-countersign-warn">动态会签意见未收齐（已提交 {{csSubmitted}}/{{csTotal}}），办理动作已置灰；如需继续办理，请先撤回动态会签。</text>
+				<view class="m-countersign-revoke">
+					<button class="m-btn m-btn-reject" style="margin-left: 0;" @tap="onRevokeCountersign">撤回动态会签</button>
+				</view>
+			</view>
 			<!-- 审批选项（对齐 vben task-form 默认审批表单：审批附件 / 指定下一节点处理人 / 抄送） -->
 			<view class="m-card" v-if="executable">
 				<view class="m-card-title">
@@ -76,21 +84,25 @@
 					<text :class="nextNodeNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{nextNodeNames.length > 0 ? nextNodeNames : '请选择下一节点处理人'}}</text>
 					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
 				</view>
-				<!-- 后加签（可重复）·「加签给下一位」：仅当前节点 properties.allowAddSign 为真才出现。
-				     文案不与既有「加签」（并加签，会签按钮）撞名（方案 §8）。
+				<!-- 协同办理组：节点 properties.allowAddSign＝后加签（接力）、dynamicCountersign＝动态会签（征询）。
+				     两档共用 tf_addSignOperators 且引擎禁双开，故同一组控件按档切文案（「加签给下一位」/「发起动态会签」），
+				     文案不与既有「加签」（并加签，会签按钮）撞名。两档都没开的节点整组隐藏。
 				     与「指定下一节点处理人」互斥（规范 06 §2.7：两键同传服务端报错），第一步＝勾其一另一组整组隐藏并清值 -->
-				<view class="m-opt-row" v-if="allowAddSign && !isAssignNext">
+				<view class="m-opt-row" v-if="collabAllowed && !isAssignNext">
 					<view class="m-opt-check" @tap="toggleAddSign">
 						<view class="m-opt-check-box" :style="checkStyle(isAddSign)">
 							<text v-if="isAddSign" class="m-opt-check-mark">✓</text>
 						</view>
-						<text class="m-opt-label" style="margin-left: 12rpx;">加签给下一位</text>
+						<text class="m-opt-label" style="margin-left: 12rpx;">{{collabLabel}}</text>
 					</view>
 				</view>
-				<view class="m-opt-pick" v-if="allowAddSign && !isAssignNext && isAddSign" @tap="openPicker('addSign')">
-					<text :class="addSignNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{addSignNames.length > 0 ? addSignNames : '请选择加签给下一位'}}</text>
+				<view class="m-opt-pick" v-if="collabAllowed && !isAssignNext && isAddSign" @tap="openPicker('addSign')">
+					<text :class="addSignNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{addSignNames.length > 0 ? addSignNames : collabPickPlaceholder}}</text>
 					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
 				</view>
+				<!-- 征询原因（issues/247）：引擎把它逐条盖在成员行变量上，一人一行独立出证；后加签档不收这个值 -->
+				<input class="m-approve-input" v-if="allowDynamic && isAddSign && !isAssignNext"
+					v-model="addSignReason" placeholder="征询原因（选填）" placeholder-class="m-form-placeholder" />
 				<view class="m-opt-row">
 					<view class="m-opt-check" @tap="toggleCc">
 						<view class="m-opt-check-box" :style="checkStyle(isCc)">
@@ -134,19 +146,19 @@
 			<input class="m-approve-input" v-model="comment" placeholder="请输入审批意见" placeholder-class="m-form-placeholder" />
 			<view class="m-approve-btns" v-if="isFirstTaskNode">
 				<!-- 蒸汽模式：原 ：first-child 去边距改内联（运行时不支持伪类） -->
-				<button class="m-btn m-btn-agree" style="margin-left: 0;" @tap="onReSubmit">重新提交</button>
+				<button class="m-btn m-btn-agree" style="margin-left: 0;" :disabled="countersignWaiting" @tap="onReSubmit">重新提交</button>
 			</view>
 				<!-- 会签：同意 / 不同意(20) / 加签 -->
 				<view class="m-approve-btns" v-else-if="isCountersign">
 					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333; flex: 0.7;" @tap="onAddSign">加签</button>
-					<button class="m-btn m-btn-reject" @tap="doExecute(20)">不同意</button>
-					<button class="m-btn m-btn-agree" @tap="doExecute(1)">同意</button>
+					<button class="m-btn m-btn-reject" :disabled="countersignWaiting" @tap="doExecute(20)">不同意</button>
+					<button class="m-btn m-btn-agree" :disabled="countersignWaiting" @tap="doExecute(1)">同意</button>
 				</view>
 				<!-- 普通：不同意(2) / 更多(退回) / 同意 -->
 				<view class="m-approve-btns" v-else>
-					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333; flex: 0.7;" @tap="onMoreActions">更多</button>
-				<button class="m-btn m-btn-reject" @tap="doExecute(2)">不同意</button>
-				<button class="m-btn m-btn-agree" @tap="doExecute(1)">同意</button>
+					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333; flex: 0.7;" :disabled="countersignWaiting" @tap="onMoreActions">更多</button>
+				<button class="m-btn m-btn-reject" :disabled="countersignWaiting" @tap="doExecute(2)">不同意</button>
+				<button class="m-btn m-btn-agree" :disabled="countersignWaiting" @tap="doExecute(1)">同意</button>
 			</view>
 		</view>
 	</view>
@@ -157,7 +169,7 @@
 	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
 	import mUserPicker from '@/components/m-user-picker/index.uvue'
 	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm, buildInitiatorExtraFields, applyFieldPermissions, withProcessFormPrefix } from '@/util/form_schemas.uts'
-	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processTaskCandidatePage, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
+	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processTaskCandidatePage, processTaskRevokeDynamicCountersign, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
 	import { userPage } from '@/api/user.uts'
 	import { uploadFile } from '@/api/file.uts'
@@ -200,6 +212,10 @@
 	// 后加签（可重复）·「加签给下一位」：勾选项 + 已选后继办理人（多选，载荷 tf_addSignOperators）
 	const isAddSign = ref(false)
 	const addSignIds = ref<string[]>([])
+	// 动态会签（征询）发起原因（tf_addSignReason，选填；引擎逐条盖在成员行变量上）
+	const addSignReason = ref('')
+	// 征询状态投影：任务详情出口 data.ext.dynamicCountersign＝{active, round, total, submitted, actors}
+	const hostCountersign = ref<UTSJSONObject | null>(null)
 	// 当前任务所在节点编码（taskVo.taskName；回落 taskModel.name / 显示名），用于在流程 JSON 里定位节点开关
 	const taskNodeName = ref('')
 	// 抄送（人员来自 /sys/user/select）
@@ -232,9 +248,9 @@
 		return s == 'true' || s == '1'
 	}
 
-	// 节点是否开了「后加签（可重复）」：在流程 JSON 的任务节点里按节点编码定位（id / properties.name /
-	// text.value 三处匹配，同 jeeflow-ui findTaskNode），读该节点 properties.allowAddSign。
-	function nodeAllowsAddSign(g: UTSJSONObject | null, nodeName: string): boolean {
+	// 节点协同开关读取：在流程 JSON 的任务节点里按节点编码定位（id / properties.name /
+	// text.value 三处匹配，同 jeeflow-ui findTaskNode），读该节点 properties.<key>。
+	function nodeFlag(g: UTSJSONObject | null, nodeName: string, key: string): boolean {
 		if (g == null || nodeName.length == 0) {
 			return false
 		}
@@ -257,29 +273,72 @@
 			if (id != nodeName && pname != nodeName && tval != nodeName) {
 				continue
 			}
-			return props != null && truthyFlag(props!.get('allowAddSign'))
+			return props != null && truthyFlag(props!.get(key))
 		}
 		return false
 	}
 
-	// 后加签显隐闸：当前节点 properties.allowAddSign 为真才开（规范 02 §4.3）。
+	// 协同档显隐闸（规范 02 §4.3）：allowAddSign＝后加签（接力）、dynamicCountersign＝动态会签（征询）。
 	// 读的是已随实例详情载到的流程 JSON（graph = processInstance/detail 的 jsonObject），
-	// 不吃后端投影（方案 §8：不为一枚布尔给 todoList 加逐行解析）；
+	// 不吃后端投影（不为一枚布尔给 todoList 加逐行解析）；
 	// 首任务节点/直返重提/会签一律不开——前两者是发起·重提语义，会签走既有「加签」（并加签）按钮，
-	// 且规范禁止会签节点配 allowAddSign。定位不到节点 ⇒ 一律按"没开"处理，界面与改动前逐字一致。
-	const allowAddSign = computed((): boolean => {
+	// 且引擎禁配这两档。定位不到节点 ⇒ 一律按"没开"处理，界面与改动前逐字一致。
+	function collabNodeOpen(key: string): boolean {
 		if (isFirstTaskNode.value || isDirectReapply.value || isCountersign.value) {
 			return false
 		}
-		return nodeAllowsAddSign(graph.value, taskNodeName.value)
+		return nodeFlag(graph.value, taskNodeName.value, key)
+	}
+	const allowAddSign = computed((): boolean => {
+		return collabNodeOpen('allowAddSign')
+	})
+	const allowDynamic = computed((): boolean => {
+		return collabNodeOpen('dynamicCountersign')
+	})
+	// 两档共用同一组控件（引擎在解析期就禁了双开），所以显隐只看"任一档开着"
+	const collabAllowed = computed((): boolean => {
+		return allowAddSign.value || allowDynamic.value
+	})
+	const collabLabel = computed((): string => {
+		return allowDynamic.value ? '发起动态会签' : '加签给下一位'
+	})
+	const collabPickPlaceholder = computed((): string => {
+		return allowDynamic.value ? '请选择会签人员' : '请选择加签给下一位'
 	})
 	// 生效中的加签选择（闸关时残留勾选一律视同未启用，提交侧据此只发一组键）
 	const addSignActive = computed((): boolean => {
-		return allowAddSign.value && isAddSign.value
+		return collabAllowed.value && isAddSign.value
 	})
 	// 「加签给下一位」为真时整组隐藏下一节点指派（互斥第一步）
 	const showNextNodeGroup = computed((): boolean => {
 		return !isCountersign.value && !isDirectReapply.value && !addSignActive.value
+	})
+	// 投影里的计数容错读取（某栈出口成串），非数一律折 0
+	function csCount(v: any | null): number {
+		if (v == null) {
+			return 0
+		}
+		const n = parseFloat(v!.toString())
+		return isNaN(n) ? 0 : n
+	}
+	// 征询中且意见没收齐：主办所有办理动作一律置灰（owner 拍"全部置灰＋撤回接口"，暂停语义不做）
+	const countersignWaiting = computed((): boolean => {
+		const dc = hostCountersign.value
+		if (dc == null) {
+			return false
+		}
+		if (!truthyFlag(dc!.get('active'))) {
+			return false
+		}
+		return csCount(dc!.get('submitted')) < csCount(dc!.get('total'))
+	})
+	const csSubmitted = computed((): string => {
+		const dc = hostCountersign.value
+		return dc == null ? '0' : $strUtil.anyToStr(dc!.get('submitted'))
+	})
+	const csTotal = computed((): string => {
+		const dc = hostCountersign.value
+		return dc == null ? '0' : $strUtil.anyToStr(dc!.get('total'))
 	})
 	// 返回节点显示名：投影给了显示名就用；否则按流程图节点文本回填，再退节点编码
 	const reapplyTargetText = computed((): string => {
@@ -437,6 +496,9 @@
 			const ext = task.getJSON('ext')
 			if (ext != null) {
 				isFirstTaskNode.value = ext!.getBoolean('isFirstTaskNode') == true
+				hostCountersign.value = ext!.getJSON('dynamicCountersign')
+			} else {
+				hostCountersign.value = null
 			}
 			// 退回修改·重提直返：本待办有没有返回目标（只读）
 			readReapplyTarget(task)
@@ -583,7 +645,7 @@
 			return
 		}
 		if (addSignOn && addSignIds.value.length == 0) {
-			uni.showToast({ title: '请选择加签给下一位', icon: 'none' })
+			uni.showToast({ title: allowDynamic.value ? '请选择会签人员' : '请选择加签给下一位', icon: 'none' })
 			return
 		}
 		if (isCc.value && ccIds.value.length == 0) {
@@ -606,11 +668,15 @@
 			param['tf_isAssignNextNodeOperator'] = true
 			param['tf_nextNodeOperator'] = nextNodeIds.value
 		}
-		// 后加签（可重复）：tf_addSignOperators 数组（规范 06 §2.7），submitType 仍是原有同意(1)；
-		// 与 tf_nextNodeOperator 互斥 ⇒ nextOn 为假时上一段根本不写那两个键，这里不再补删
+		// 协同档提交：tf_addSignOperators 数组（规范 06 §2.7），submitType 仍是原有同意(1)；
+		// 与 tf_nextNodeOperator 互斥 ⇒ nextOn 为假时上一段根本不写那两个键，这里不再补删。
+		// 征询档额外带 tf_addSignReason（引擎逐条盖在成员行变量上，一人一行独立出证）
 		if (addSignOn) {
 			param['tf_isAddSign'] = true
 			param['tf_addSignOperators'] = addSignIds.value
+			if (allowDynamic.value && (addSignReason.value ?? '').length > 0) {
+				param['tf_addSignReason'] = addSignReason.value
+			}
 		}
 		if (isCc.value) {
 			param['tf_isCc'] = true
@@ -638,8 +704,28 @@
 		if (submitType == 4 && taskName.length > 0) {
 			param['taskName'] = taskName
 		}
-		processTaskExecute(param).then((_res) => {
+		processTaskExecute(param).then((res) => {
 			uni.hideLoading()
+			// 征询发起的响应 marker（data.dynamicCountersign）：主办行没办结、任务还在自己待办里，
+			// 所以不能按「办理成功」退页——清掉本轮勾选、重读详情，让未收齐横幅与置灰态当场生效。
+			// 普通办结时封装层把 null data 折成 true（非对象），故先判形状再取，别硬转
+			let marker: UTSJSONObject | null = null
+			if (res != null && typeof res === 'object') {
+				marker = (res as UTSJSONObject).getJSON('dynamicCountersign')
+			}
+			if (marker != null) {
+				uni.showToast({
+					title: '已发起动态会签（第 ' + $strUtil.anyToStr(marker!.get('round')) + ' 轮 · 共 '
+						+ $strUtil.anyToStr(marker!.get('total')) + ' 人待答复）',
+					icon: 'none'
+				})
+				isAddSign.value = false
+				addSignIds.value = [] as string[]
+				addSignReason.value = ''
+				uni.setStorageSync('pages:approval:approval:refresh', true)
+				loadAll()
+				return
+			}
 			uni.showToast({ title: '办理成功', icon: 'success' })
 			uni.setStorageSync('pages:approval:approval:refresh', true)
 			setTimeout(() => {
@@ -650,6 +736,40 @@
 			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
 		}).finally(() => {
 			submitting.value = false
+		})
+	}
+
+	// 撤回动态会签（征询置灰态的唯一恢复出口）：未答成员行清场、已交意见保留，不可逆 ⇒ 先二次确认
+	function onRevokeCountersign(): void {
+		if (submitting.value) {
+			return
+		}
+		uni.showModal({
+			title: '撤回动态会签',
+			content: '撤回后未交意见的成员行会被清场（已交意见保留），确定撤回本轮动态会签吗？',
+			success: (r: ShowModalSuccess) => {
+				if (!r.confirm) {
+					return
+				}
+				submitting.value = true
+				uni.showLoading({ title: '撤回中……', mask: true })
+				// reason 进主办行征询账本（与 vben 同值文案）
+				processTaskRevokeDynamicCountersign({
+					processTaskId: taskId.value,
+					reason: '主办收回征询'
+				} as UTSJSONObject).then((_r) => {
+					uni.hideLoading()
+					uni.showToast({ title: '已撤回动态会签，未交意见的成员行已清场', icon: 'none' })
+					// 主办行没办结，只是闸门开了：留在本页重读详情，不能走退页那一路
+					uni.setStorageSync('pages:approval:approval:refresh', true)
+					loadAll()
+				}).catch((err) => {
+					uni.hideLoading()
+					uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+				}).finally(() => {
+					submitting.value = false
+				})
+			}
 		})
 	}
 
@@ -788,7 +908,7 @@
 	}
 
 	function toggleAddSign(): void {
-		if (!allowAddSign.value) {
+		if (!collabAllowed.value) {
 			// 闸关（含 graph 未到位的瞬时态）不接受勾选，避免勾上后闸再翻转把残留带进提交
 			return
 		}
@@ -888,11 +1008,11 @@
 			pickerSelected.value = ccIds.value
 			pickerMultiple.value = true
 		} else if (source == 'addSign') {
-			// 后加签选人：数据源沿用 candidatePage（与 vben5 / jeeflow-ui 同位组一致），多选
+			// 协同档选人：数据源沿用 candidatePage（与 vben5 / jeeflow-ui 同位组一致），多选
 			if (candidates.value.length == 0) {
 				loadCandidates()
 			}
-			pickerTitle.value = '加签给下一位'
+			pickerTitle.value = allowDynamic.value ? '选择会签人员' : '加签给下一位'
 			pickerOptions.value = candidates.value
 			pickerSelected.value = addSignIds.value
 			pickerMultiple.value = true
@@ -962,6 +1082,16 @@
 	.m-records-loading {
 		padding: 24rpx 0;
 		align-items: center;
+	}
+
+	.m-countersign-warn {
+		font-size: 26rpx;
+		color: #B45309;
+		line-height: 38rpx;
+	}
+
+	.m-countersign-revoke {
+		margin-top: 16rpx;
 	}
 
 	.m-records-loading-text {

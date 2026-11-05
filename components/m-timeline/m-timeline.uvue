@@ -23,10 +23,18 @@
 				<view class="m-timeline-comment" v-if="commentText(item) != ''">
 					<text class="m-timeline-comment-text">{{commentText(item)}}</text>
 				</view>
-				<!-- 后加签账本（tf_addSignHistory）：附加信息行，不占动作徽标/意见的坑（规范 06 §2.7） -->
+				<!-- 协同办理账本（tf_addSignHistory）：附加信息行，不占动作徽标/意见的坑（规范 06 §2.7） -->
 				<view class="m-timeline-extra" v-for="(h, hi) in addSignHistory(item)" :key="'as' + hi">
 					<text class="m-timeline-extra-text">{{addSignHistoryText(h)}}</text>
 					<text class="m-timeline-extra-time" v-if="addSignHistoryTime(h) != ''">· {{addSignHistoryTime(h)}}</text>
+				</view>
+				<!-- 动态会签成员行（issues/247）：一人一行＝一条免责凭证，意见不聚合，这里只标出它是哪一轮的征询 -->
+				<view class="m-timeline-extra" v-if="countersignLabel(item) != ''">
+					<text class="m-timeline-extra-text">{{countersignLabel(item)}}</text>
+				</view>
+				<!-- 已办撤回留痕（tf_recallHistory，issues/246）：只追加在原行上，历史行不改写 -->
+				<view class="m-timeline-extra" v-for="(h, hi) in recallHistory(item)" :key="'rc' + hi">
+					<text class="m-timeline-extra-text">{{recallHistoryText(h)}}</text>
 				</view>
 			</view>
 		</view>
@@ -69,6 +77,17 @@
 		return '状态' + state.toString()
 	}
 
+	// 留痕账本里的人都是用户 id（引擎逐栈都存 id）⇒ 借姓名表折成人名，取不到就原样显示 id。
+	// 触达 nameTick，保证姓名表异步到位后重新渲染
+	function nameOf(id: string): string {
+		if (id.length == 0) {
+			return ''
+		}
+		const _tick = nameTick.value
+		const n = userNames.value.getString(id)
+		return (n != null && n.length > 0) ? n! : id
+	}
+
 	function commentText(item: UTSJSONObject): string {
 		const variable = item.getJSON('variable')
 		if (variable != null) {
@@ -83,16 +102,19 @@
 		return ''
 	}
 
-	// ── 后加签账本（规范 06 §2.7 tf_addSignHistory：List<Map>，每项 {round,fromActor,toActors,time,operator}）──
+	// ── 留痕账本（规范 06 §2.7）──
+	// tf_addSignHistory 每项 {round,fromActor,toActors,time,operator}，动态会签同键并另带
+	// reason / revoked（撤回清场那条）；tf_recallHistory 每项 {operator,time,recalledTaskId}。
+	// 三者都只追加不改写，所以撤回/清场后的历史仍能逐条出证。
 	// 取数位与转办留痕同族：审批记录行的变量出口是 ext（无则 variable 副本），不是任务表单切片 taskFormData。
 	// 形态宽松解析（对象数组 / 某栈序列化成 JSON 字符串都收），解析失败＝不渲染这行。
-	function parseAddSignHistory(vars: UTSJSONObject): UTSJSONObject[] | null {
-		const raw = vars.get('tf_addSignHistory')
+	function parseHistory(vars: UTSJSONObject, key: string): UTSJSONObject[] | null {
+		const raw = vars.get(key)
 		if (raw == null) {
 			return null
 		}
 		try {
-			const arr = vars.getArray<UTSJSONObject>('tf_addSignHistory')
+			const arr = vars.getArray<UTSJSONObject>(key)
 			if (arr != null) {
 				return arr!
 			}
@@ -111,23 +133,86 @@
 		}
 	}
 
-	function addSignHistory(item: UTSJSONObject): UTSJSONObject[] {
+	// 逐栈双出口取同一个键（ext 优先、variable 兜底）
+	function historyOf(item: UTSJSONObject, key: string): UTSJSONObject[] {
 		const none: UTSJSONObject[] = []
 		let list: UTSJSONObject[] | null = null
 		const ext = item.getJSON('ext')
 		if (ext != null) {
-			list = parseAddSignHistory(ext!)
+			list = parseHistory(ext!, key)
 		}
 		if (list == null) {
 			const variable = item.getJSON('variable')
 			if (variable != null) {
-				list = parseAddSignHistory(variable!)
+				list = parseHistory(variable!, key)
 			}
 		}
 		if (list == null) {
 			return none
 		}
 		return list!
+	}
+
+	function addSignHistory(item: UTSJSONObject): UTSJSONObject[] {
+		return historyOf(item, 'tf_addSignHistory')
+	}
+
+	function recallHistory(item: UTSJSONObject): UTSJSONObject[] {
+		return historyOf(item, 'tf_recallHistory')
+	}
+
+	// 「已于 {time} 由 {operator} 撤回重办」（与 vben 同位文案逐字一致）
+	function recallHistoryText(h: UTSJSONObject): string {
+		const op = nameOf($strUtil.toStr(h.getString('operator')))
+		return '已于 ' + $strUtil.toStr(h.getString('time')) + ' 由 ' + (op.length > 0 ? op : '-') + ' 撤回重办'
+	}
+
+	// 成员行判定（与 vben approval-record 同判据）：轮次戳 addSignRound_{node} 主办行也带，
+	// 只有成员行才带发起原因戳 tf_addSignReason ⇒ 两枚都得有才算成员，只认轮次会把主办行自己吞进来
+	function countersignReason(item: UTSJSONObject): string {
+		const ext = item.getJSON('ext')
+		if (ext != null) {
+			const r = $strUtil.toStr(ext!.getString('tf_addSignReason'))
+			if (r.length > 0) {
+				return r
+			}
+		}
+		const variable = item.getJSON('variable')
+		if (variable != null) {
+			return $strUtil.toStr(variable!.getString('tf_addSignReason'))
+		}
+		return ''
+	}
+
+	function countersignRound(item: UTSJSONObject): string {
+		if (countersignReason(item).length == 0) {
+			return ''
+		}
+		const ext = item.getJSON('ext')
+		if (ext == null) {
+			return ''
+		}
+		let round = ''
+		ext!.toMap().forEach((value, key) => {
+			if (!key.startsWith('addSignRound_')) {
+				return
+			}
+			const v = $strUtil.anyToStr(value)
+			if (v.length > 0 && round.length == 0) {
+				round = v
+			}
+		})
+		return round
+	}
+
+	// 一行文案：「第 N 轮征询意见 · 征询原因：X」；非成员行返回空串，模板据此不渲染
+	function countersignLabel(item: UTSJSONObject): string {
+		const round = countersignRound(item)
+		if (round.length == 0) {
+			return ''
+		}
+		const reason = countersignReason(item)
+		return '第 ' + round + ' 轮征询意见' + (reason.length > 0 ? ' · 征询原因：' + reason : '')
 	}
 
 	// 人名列表串：['a','b'] / "a,b" / Kotlin 的 "[a, b]" 一律读成「a、b」
@@ -144,17 +229,22 @@
 		for (let i = 0; i < parts.length; i++) {
 			const p = parts[i].trim()
 			if (p.length > 0) {
-				names.push(p)
+				names.push(nameOf(p))
 			}
 		}
 		return names.join('、')
 	}
 
-	// 一行文案：「第 N 轮加签给 X、Y」（与 submitTypeLabel 同族写死，无字典服务）
+	// 一行文案：「第 N 轮加签给 X、Y」（与 submitTypeLabel 同族写死，无字典服务）；
+	// 动态会签的撤回清场那条带 revoked=true，动作相反，不能读成"又拉了一轮人"
 	function addSignHistoryText(h: UTSJSONObject): string {
 		const round = $strUtil.anyToStr(h.get('round'))
 		const heads = round.length > 0 ? ('第' + round + '轮') : '加签'
 		const to = targetsText(h.get('toActors'))
+		const revoked = $strUtil.anyToStr(h.get('revoked'))
+		if (revoked == 'true' || revoked == '1') {
+			return heads + '撤回征询，摘除' + (to.length > 0 ? to : '-')
+		}
 		return heads + '加签给' + (to.length > 0 ? to : '-')
 	}
 

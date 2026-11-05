@@ -38,11 +38,19 @@
 			<!-- 已办列表 -->
 			<template v-else-if="currentTab == 1">
 				<view class="m-task-list" v-if="doneList.length > 0">
-					<view class="m-task-item" v-for="(item, index) in doneList" :key="index" @tap="onTapDone(item)">
-						<view class="m-task-badge" style="background-color: #16A34A;"></view>
-						<view class="m-task-info">
-						<text class="m-task-name">{{item.getString('displayName') ?? ''}}</text>
-						<text class="m-task-meta">{{item.getString('processDefineDisplayName') ?? ''}} · {{applicantName(item)}} · {{fmtTime(item.getString('finishTime') ?? '')}}</text>
+					<!-- 行主体与「撤回」按钮做成兄弟节点（不靠事件修饰符阻断冒泡）：整卡主体仍是进入实例详情的入口 -->
+					<view class="m-task-item" v-for="(item, index) in doneList" :key="index">
+						<view class="m-task-main" @tap="onTapDone(item)">
+							<view class="m-task-badge" style="background-color: #16A34A;"></view>
+							<view class="m-task-info">
+							<text class="m-task-name">{{item.getString('displayName') ?? ''}}</text>
+							<text class="m-task-meta">{{item.getString('processDefineDisplayName') ?? ''}} · {{applicantName(item)}} · {{fmtTime(item.getString('finishTime') ?? '')}}</text>
+							</view>
+						</view>
+						<!-- 已办撤回（issues/246）：开关（节点 allowRecall）与窗口（下游整链未办结）都由引擎判，
+						     列表行不带节点属性 ⇒ 按钮恒在，不合规时把引擎原文当提示（对齐 vben 已办列表同位） -->
+						<view class="m-task-recall" @tap="onRecallDone(item)">
+							<text class="m-task-recall-text">撤回</text>
 						</view>
 						<m-icon type="right" :size="20" color="#C8C8C8"></m-icon>
 					</view>
@@ -81,7 +89,7 @@
 	</view>
 </template>
 <script setup lang="uts">
-	import { processTaskTodoList, processTaskDoneList, processInstanceCcList, processInstanceUpdateCCStatus } from '@/api/workflow.uts'
+	import { processTaskTodoList, processTaskDoneList, processTaskRecall, processInstanceCcList, processInstanceUpdateCCStatus } from '@/api/workflow.uts'
 	import { applyTodoBadge, refreshTabBadges } from '@/util/badge.uts'
 	import { ERR_AUTH_REDIRECT } from '@/util/http.uts'
 	import { $strUtil } from '@/util/str_util'
@@ -102,6 +110,8 @@
 	const loaded = ref<boolean[]>([false, false, false])
 	// 各段首屏加载失败标记：true 显示可重试错误态而非「暂无数据」
 	const loadFailed = ref<boolean[]>([false, false, false])
+	// 已办撤回进行中标记（连点防护）
+	const recalling = ref(false)
 
 	function fmtTime(iso: string): string {
 		if (iso.length == 0) {
@@ -314,6 +324,42 @@
 		})
 	}
 
+	// 已办撤回：收回自己刚办结的那一手。原 FINISHED 行不改写（只盖 tf_recallHistory 账本），
+	// 同节点新建一行 DOING 回到自己待办；判据全在引擎，这里只负责二次确认与重取列表
+	function onRecallDone(item: UTSJSONObject): void {
+		const id = item.getString('id') ?? ''
+		if (id.length == 0 || recalling.value) {
+			return
+		}
+		uni.showModal({
+			title: '撤回已办',
+			content: '撤回后该节点会重新回到你的待办（原审批记录保留、下游未办的会清场），确定撤回吗？',
+			success: (r: ShowModalSuccess) => {
+				if (!r.confirm) {
+					return
+				}
+				recalling.value = true
+				uni.showLoading({ title: '撤回中……', mask: true })
+				processTaskRecall({
+					processTaskId: id
+				} as UTSJSONObject).then((_res) => {
+					uni.hideLoading()
+					uni.showToast({ title: '已撤回，该节点已回到你的待办', icon: 'none' })
+					// 原 FINISHED 行不改写（只是多了一条撤回账本），新行落在待办 ⇒ 已办段重取、待办段标脏、角标同步
+					pageNum.value = 1
+					loaded.value[0] = false
+					requestData()
+					refreshTabBadges()
+				}).catch((err) => {
+					uni.hideLoading()
+					uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+				}).finally(() => {
+					recalling.value = false
+				})
+			}
+		})
+	}
+
 	function onTapCc(item: UTSJSONObject): void {
 		const instanceId = item.getString('processInstanceId') ?? ''
 		// 未读抄送进详情时顺带标记已读（失败不阻塞）
@@ -393,6 +439,24 @@
 		border-radius: 16rpx;
 		padding: 28rpx 24rpx;
 		margin-bottom: 20rpx;
+	}
+
+	.m-task-main {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.m-task-recall {
+		padding: 10rpx 18rpx;
+		margin-right: 10rpx;
+		border-radius: 8rpx;
+		background-color: #EEF2FF;
+	}
+
+	.m-task-recall-text {
+		font-size: 24rpx;
+		color: #2563EB;
 	}
 
 	.m-task-badge {

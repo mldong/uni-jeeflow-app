@@ -26,10 +26,10 @@ Android 体验包：[蒲公英 · jeeflow审批](https://www.pgyer.com/jeeflowsh
 |------|------|
 | 登录 | 账号密码；默认连 pro 线上，开发环境摇一摇 / 长按登录页 logo 可切换接口地址（正式包锁定 pro） |
 | 工作台 | 待办/消息角标；快捷发起（`processDesign/listByType`）；四小指标（待办/已办/我发起/抄送，走分页接口 recordCount） |
-| 审批中心 | 待办 / 已办 / 抄送 |
+| 审批中心 | 待办 / 已办（收回自己刚办结的那一手）/ 抄送 |
 | 统计 | 分析页接引擎 stats 三 action 真数据：指标卡/趋势（7天/30天/12月）/状态分布/流程 Top 10/当前积压节点与积压人 |
 | 发起 | 动态表单：自定义组件（如 LeaveWfForm）或 SchemaWfForm（`__schema__` → `getByTableName`） |
-| 任务/实例 | 同意/拒绝、撤回、审批记录、钉钉风格流程图（mldong-flow-designer-dingtalk） |
+| 任务/实例 | 同意/拒绝/退回/跳转、实例撤回、已办撤回（节点 `allowRecall`）、后加签与动态会签（征询）办理侧、审批记录（含加签/征询/撤回留痕）、钉钉风格流程图（mldong-flow-designer-dingtalk） |
 | 我的 | 委托代理 CRUD、退出登录 |
 | 消息 | 列表 / 详情 / 已读 / tab 角标 |
 

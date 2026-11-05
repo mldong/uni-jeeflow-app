@@ -103,6 +103,16 @@ export const processTaskExecute = (param: UTSJSONObject): Promise<any> => {
 export const processTaskAddCandidate = (param: UTSJSONObject): Promise<any> => {
 	return wfPost("processTask/addCandidate", param)
 }
+// 已办撤回 {processTaskId}：办理人收回自己刚办结的那一手（原行保留、新行复活重办）。
+// 节点开关（allowRecall）与窗口（下游整链未办结）一律由引擎判，前端不预判，报错原文即提示。
+export const processTaskRecall = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/recall", param)
+}
+// 撤回动态会签 {processTaskId, reason?}：废弃本主办行下未答的成员行（已交意见保留），
+// 是征询置灰态的唯一恢复出口
+export const processTaskRevokeDynamicCountersign = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/revokeDynamicCountersign", param)
+}
 // 可跳转节点列表 {processInstanceId} → [{label, value(taskName)}]（已完成、非会签节点）
 export const processTaskJumpAbleTaskNameList = (param: UTSJSONObject): Promise<any> => {
 	return wfPost("processTask/jumpAbleTaskNameList", param)
