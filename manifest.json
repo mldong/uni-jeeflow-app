@@ -2,8 +2,8 @@
 	"name": "jeeflow审批",
 	"appid": "__UNI__7F67CF8",
 	"description": "jeeflow 工作流系列管理系统 · 移动审批端",
-	"versionName": "0.2.5",
-	"versionCode": "21",
+	"versionName": "0.2.6",
+	"versionCode": "22",
 	"uni-app-x": {
 		"styleIsolationVersion": "2",
 		"vapor": true

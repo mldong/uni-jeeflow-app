@@ -156,7 +156,8 @@
 				</view>
 				<!-- 普通：不同意(2) / 更多(退回) / 同意 -->
 				<view class="m-approve-btns" v-else>
-					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333; flex: 0.7;" :disabled="countersignWaiting" @tap="onMoreActions">更多</button>
+					<!-- 「更多」自带内联深色字会把禁用态的灰化盖掉 ⇒ 置灰时连颜色一起切（其余按钮吃框架的 disabled 灰） -->
+					<button class="m-btn m-btn-more" :style="countersignWaiting ? 'margin-left: 0; color: #A8A8A8; flex: 0.7;' : 'margin-left: 0; color: #333333; flex: 0.7;'" :disabled="countersignWaiting" @tap="onMoreActions">更多</button>
 				<button class="m-btn m-btn-reject" :disabled="countersignWaiting" @tap="doExecute(2)">不同意</button>
 				<button class="m-btn m-btn-agree" :disabled="countersignWaiting" @tap="doExecute(1)">同意</button>
 			</view>
