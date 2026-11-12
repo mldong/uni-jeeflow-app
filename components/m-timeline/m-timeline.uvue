@@ -32,6 +32,11 @@
 				<view class="m-timeline-extra" v-if="countersignLabel(item) != ''">
 					<text class="m-timeline-extra-text">{{countersignLabel(item)}}</text>
 				</view>
+				<!-- 动态协办账本（tf_aidantHistory，issues/253）：落主办行，附加信息行出证，不占动作徽标/意见的坑 -->
+				<view class="m-timeline-extra" v-for="(h, hi) in aidantHistory(item)" :key="'ad' + hi">
+					<text class="m-timeline-extra-text">{{aidantHistoryText(h)}}</text>
+					<text class="m-timeline-extra-time" v-if="aidantHistoryTime(h) != ''">· {{aidantHistoryTime(h)}}</text>
+				</view>
 				<!-- 已办撤回留痕（tf_recallHistory，issues/246）：只追加在原行上，历史行不改写 -->
 				<view class="m-timeline-extra" v-for="(h, hi) in recallHistory(item)" :key="'rc' + hi">
 					<text class="m-timeline-extra-text">{{recallHistoryText(h)}}</text>
@@ -157,6 +162,11 @@
 		return historyOf(item, 'tf_addSignHistory')
 	}
 
+	// 动态协办账本（issues/253）：每项 {round,fromActor,toActors,reason,time,operator}，落主办行变量
+	function aidantHistory(item: UTSJSONObject): UTSJSONObject[] {
+		return historyOf(item, 'tf_aidantHistory')
+	}
+
 	function recallHistory(item: UTSJSONObject): UTSJSONObject[] {
 		return historyOf(item, 'tf_recallHistory')
 	}
@@ -249,6 +259,19 @@
 	}
 
 	function addSignHistoryTime(h: UTSJSONObject): string {
+		return $strUtil.toStr(h.getString('time'))
+	}
+
+	// 协办账本一行文案：「第 N 轮协办给 X、Y」（与 vben wf.instance.aidantHistory / jeeflow-ui 同位文案一致）。
+	// 协办不是审批意见 ⇒ 不占 commentText 那一行，只在附加信息行出证
+	function aidantHistoryText(h: UTSJSONObject): string {
+		const round = $strUtil.anyToStr(h.get('round'))
+		const heads = round.length > 0 ? ('第' + round + '轮') : '协办'
+		const to = targetsText(h.get('toActors'))
+		return heads + '协办给' + (to.length > 0 ? to : '-')
+	}
+
+	function aidantHistoryTime(h: UTSJSONObject): string {
 		return $strUtil.toStr(h.getString('time'))
 	}
 

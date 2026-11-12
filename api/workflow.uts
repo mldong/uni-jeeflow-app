@@ -113,6 +113,13 @@ export const processTaskRecall = (param: UTSJSONObject): Promise<any> => {
 export const processTaskRevokeDynamicCountersign = (param: UTSJSONObject): Promise<any> => {
 	return wfPost("processTask/revokeDynamicCountersign", param)
 }
+// 动态协办 {processTaskId, actorIds: string[], reason?, waitCompletion?}（issues/253）：
+// 派生 task_type=1 协办子行（每人一行），协办行办结不驱动流程、主办行保留拍板权。
+// waitCompletion 缺省 false＝主办不等协办办结即可推进；true＝等待闸（未齐时主办办理置灰）。
+// 与转办（摘原人换人）/加签（追加参与人）语义不同，故独立 action；operator 由后端从登录态注入。
+export const processTaskAidant = (param: UTSJSONObject): Promise<any> => {
+	return wfPost("processTask/aidant", param)
+}
 // 可跳转节点列表 {processInstanceId} → [{label, value(taskName)}]（已完成、非会签节点）
 export const processTaskJumpAbleTaskNameList = (param: UTSJSONObject): Promise<any> => {
 	return wfPost("processTask/jumpAbleTaskNameList", param)

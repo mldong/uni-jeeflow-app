@@ -56,6 +56,38 @@
 					<button class="m-btn m-btn-reject" style="margin-left: 0;" @tap="onRevokeCountersign">撤回动态会签</button>
 				</view>
 			</view>
+			<!-- 协办中（issues/253）：协办行办结不驱动流程、主办保留拍板权。
+			     wait=true 且未办结齐 ⇒ 办理动作置灰；wait=false（缺省）只提示不拦 -->
+			<view class="m-card" v-if="executable && aidantActive">
+				<text class="m-countersign-warn">协办中（已办结 {{aidantSubmitted}}/{{aidantTotal}}）；协办行办结不驱动流程，你仍是主办、保留拍板权。</text>
+				<text class="m-countersign-warn" v-if="aidantWaiting">已开启「等协办办结才允许我办理」，办理动作已置灰。</text>
+			</view>
+			<!-- 协办派生面板（更多操作 → 协办）：多选协办人＋原因（选填）＋等待开关（缺省关）。
+			     与「加签」（追加参与人）/转办（摘原人换人）语义不同：这里派生的是不驱动流程的协办子行 -->
+			<view class="m-card" v-if="executable && aidantVisible">
+				<view class="m-card-title">
+					<text class="m-card-title-text">协办（派生协办任务）</text>
+				</view>
+				<text class="m-aidant-hint">协办是把这活交给别人干：每人派生一条协办任务，协办行办结不驱动流程，你仍是主办、保留拍板权。只想拉人一起办请用「加签」。</text>
+				<view class="m-opt-pick" @tap="openPicker('aidant')">
+					<text :class="aidantNames.length > 0 ? 'm-opt-pick-value' : 'm-opt-pick-placeholder'">{{aidantNames.length > 0 ? aidantNames : '请选择协办人（可多选）'}}</text>
+					<m-icon type="bottom" :size="18" color="#999999"></m-icon>
+				</view>
+				<input class="m-approve-input" v-model="aidantReason" placeholder="协办原因（选填）" placeholder-class="m-form-placeholder" />
+				<view class="m-opt-row">
+					<view class="m-opt-check" @tap="toggleAidantWait">
+						<view class="m-opt-check-box" :style="checkStyle(aidantWait)">
+							<text v-if="aidantWait" class="m-opt-check-mark">✓</text>
+						</view>
+						<text class="m-opt-label" style="margin-left: 12rpx;">等协办办结才允许我办理</text>
+					</view>
+				</view>
+				<text class="m-aidant-hint">缺省关：你可随时办理推进，未办结的协办行随离开节点清场；开启后协办未办结齐时你的办理动作置灰。</text>
+				<view class="m-aidant-actions">
+					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333;" @tap="onCancelAidant">取消</button>
+					<button class="m-btn m-btn-agree" :disabled="aidantIds.length == 0 || submitting" @tap="doAidant">确定派生</button>
+				</view>
+			</view>
 			<!-- 审批选项（对齐 vben task-form 默认审批表单：审批附件 / 指定下一节点处理人 / 抄送） -->
 			<view class="m-card" v-if="executable">
 				<view class="m-card-title">
@@ -146,20 +178,22 @@
 			<input class="m-approve-input" v-model="comment" placeholder="请输入审批意见" placeholder-class="m-form-placeholder" />
 			<view class="m-approve-btns" v-if="isFirstTaskNode">
 				<!-- 蒸汽模式：原 ：first-child 去边距改内联（运行时不支持伪类） -->
-				<button class="m-btn m-btn-agree" style="margin-left: 0;" :disabled="countersignWaiting" @tap="onReSubmit">重新提交</button>
+				<button class="m-btn m-btn-agree" style="margin-left: 0;" :disabled="executeBlocked" @tap="onReSubmit">重新提交</button>
 			</view>
 				<!-- 会签：同意 / 不同意(20) / 加签 -->
 				<view class="m-approve-btns" v-else-if="isCountersign">
 					<button class="m-btn m-btn-more" style="margin-left: 0; color: #333333; flex: 0.7;" @tap="onAddSign">加签</button>
-					<button class="m-btn m-btn-reject" :disabled="countersignWaiting" @tap="doExecute(20)">不同意</button>
-					<button class="m-btn m-btn-agree" :disabled="countersignWaiting" @tap="doExecute(1)">同意</button>
+					<button class="m-btn m-btn-reject" :disabled="executeBlocked" @tap="doExecute(20)">不同意</button>
+					<button class="m-btn m-btn-agree" :disabled="executeBlocked" @tap="doExecute(1)">同意</button>
 				</view>
 				<!-- 普通：不同意(2) / 更多(退回) / 同意 -->
 				<view class="m-approve-btns" v-else>
-					<!-- 「更多」自带内联深色字会把禁用态的灰化盖掉 ⇒ 置灰时连颜色一起切（其余按钮吃框架的 disabled 灰） -->
+					<!-- 「更多」自带内联深色字会把禁用态的灰化盖掉 ⇒ 置灰时连颜色一起切（其余按钮吃框架的 disabled 灰）。
+					     只吃征询闸、不吃协办等待闸：协办入口就在「更多」里，连带锁死会让主办派生不了下一轮；
+					     更多里的退回/跳转属办理动作，由 doExecute 的 executeBlocked 守卫拦住 -->
 					<button class="m-btn m-btn-more" :style="countersignWaiting ? 'margin-left: 0; color: #A8A8A8; flex: 0.7;' : 'margin-left: 0; color: #333333; flex: 0.7;'" :disabled="countersignWaiting" @tap="onMoreActions">更多</button>
-				<button class="m-btn m-btn-reject" :disabled="countersignWaiting" @tap="doExecute(2)">不同意</button>
-				<button class="m-btn m-btn-agree" :disabled="countersignWaiting" @tap="doExecute(1)">同意</button>
+				<button class="m-btn m-btn-reject" :disabled="executeBlocked" @tap="doExecute(2)">不同意</button>
+				<button class="m-btn m-btn-agree" :disabled="executeBlocked" @tap="doExecute(1)">同意</button>
 			</view>
 		</view>
 	</view>
@@ -170,7 +204,7 @@
 	import mFlowNative from '@/components/m-flow-native/m-flow-native.uvue'
 	import mUserPicker from '@/components/m-user-picker/index.uvue'
 	import { SchemaField, resolveFormSchema, schemaFromGraph, schemaFromTableModel, hydrateSchemaFormData, isSchemaWfForm, buildInitiatorExtraFields, applyFieldPermissions, withProcessFormPrefix } from '@/util/form_schemas.uts'
-	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processTaskCandidatePage, processTaskRevokeDynamicCountersign, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
+	import { processTaskDetail, processTaskExecute, processTaskAddCandidate, processTaskJumpAbleTaskNameList, processTaskCandidatePage, processTaskRevokeDynamicCountersign, processTaskAidant, processInstanceDetail, processInstanceApprovalRecord, processInstanceHighLight } from '@/api/workflow.uts'
 	import { schemaGetByTableName } from '@/api/schema.uts'
 	import { userPage } from '@/api/user.uts'
 	import { uploadFile } from '@/api/file.uts'
@@ -217,6 +251,13 @@
 	const addSignReason = ref('')
 	// 征询状态投影：任务详情出口 data.ext.dynamicCountersign＝{active, round, total, submitted, actors}
 	const hostCountersign = ref<UTSJSONObject | null>(null)
+	// 协办状态投影（issues/253）：data.ext.aidant＝{active, round, total, submitted, actors, wait}
+	const hostAidant = ref<UTSJSONObject | null>(null)
+	// 协办派生面板（更多操作里进入）：多选协办人＋原因（选填）＋等待开关（缺省关）
+	const aidantVisible = ref(false)
+	const aidantIds = ref<string[]>([])
+	const aidantReason = ref('')
+	const aidantWait = ref(false)
 	// 当前任务所在节点编码（taskVo.taskName；回落 taskModel.name / 显示名），用于在流程 JSON 里定位节点开关
 	const taskNodeName = ref('')
 	// 抄送（人员来自 /sys/user/select）
@@ -340,6 +381,36 @@
 	const csTotal = computed((): string => {
 		const dc = hostCountersign.value
 		return dc == null ? '0' : $strUtil.anyToStr(dc!.get('total'))
+	})
+	// ── 动态协办（issues/253）──
+	// 与征询的本质差异：征询强制等收齐；协办「等不等」由发起参数 waitCompletion 决定。
+	// 只有 wait=true 且未办结齐时才置灰主办办理动作；wait=false（缺省）主办可随时拍板推进。
+	// 协办行办结不驱动流程、主办行保留 ⇒ 派生成功后任务仍 DOING，只重读详情、不退页。
+	const aidantActive = computed((): boolean => {
+		const ad = hostAidant.value
+		return ad != null && truthyFlag(ad!.get('active'))
+	})
+	const aidantWaiting = computed((): boolean => {
+		const ad = hostAidant.value
+		if (ad == null) {
+			return false
+		}
+		if (!truthyFlag(ad!.get('active')) || !truthyFlag(ad!.get('wait'))) {
+			return false
+		}
+		return csCount(ad!.get('submitted')) < csCount(ad!.get('total'))
+	})
+	const aidantSubmitted = computed((): string => {
+		const ad = hostAidant.value
+		return ad == null ? '0' : $strUtil.anyToStr(ad!.get('submitted'))
+	})
+	const aidantTotal = computed((): string => {
+		const ad = hostAidant.value
+		return ad == null ? '0' : $strUtil.anyToStr(ad!.get('total'))
+	})
+	// 办理动作置灰闸：征询未收齐 或 协办等待闸未齐（两族子行靠 task_type 分辨，各数各的行）
+	const executeBlocked = computed((): boolean => {
+		return countersignWaiting.value || aidantWaiting.value
 	})
 	// 返回节点显示名：投影给了显示名就用；否则按流程图节点文本回填，再退节点编码
 	const reapplyTargetText = computed((): string => {
@@ -498,8 +569,10 @@
 			if (ext != null) {
 				isFirstTaskNode.value = ext!.getBoolean('isFirstTaskNode') == true
 				hostCountersign.value = ext!.getJSON('dynamicCountersign')
+				hostAidant.value = ext!.getJSON('aidant')
 			} else {
 				hostCountersign.value = null
+				hostAidant.value = null
 			}
 			// 退回修改·重提直返：本待办有没有返回目标（只读）
 			readReapplyTarget(task)
@@ -628,6 +701,17 @@
 
 	function doExecute(submitType: number, taskName: string = ''): void {
 		if (submitting.value) {
+			return
+		}
+		// 办理闸兜底（征询未收齐 / 协办等待闸未齐）：底部按钮已置灰，但「更多」里的退回/跳转
+		// 不经按钮 disabled（协办入口也在「更多」里，不能连带锁死）⇒ 在此拦住；服务端报错仍是权威兜底
+		if (executeBlocked.value) {
+			uni.showToast({
+				title: countersignWaiting.value
+					? '动态会签意见未收齐，不能办理'
+					: ('协办未办结（已办结 ' + aidantSubmitted.value + '/' + aidantTotal.value + '），不能办理'),
+				icon: 'none'
+			})
 			return
 		}
 		// 审批意见必填（对齐 vben tf_approvalComment rules=required，全部按钮生效）
@@ -845,11 +929,64 @@
 	const addSignNames = computed((): string => {
 		return namesOf(candidates.value, addSignIds.value)
 	})
+	// 协办人选显示名（数据源照抄送/会签加签取 /sys/user/page，多选）
+	const aidantNames = computed((): string => {
+		return namesOf(users.value, aidantIds.value)
+	})
+
+	// 协办入口（issues/253）：打开派生面板。用户列表 onLoad 已预载；
+	// 若仍为空，面板里的选人弹层 openPicker('aidant') 自带 loadUsers 兜底（此处不前向引用它）
+	function onAidant(): void {
+		aidantVisible.value = true
+	}
+
+	function toggleAidantWait(): void {
+		aidantWait.value = !aidantWait.value
+	}
+
+	// 取消/成功后都回到缺省态（等待开关缺省关），不把上一轮残留带进下次派生
+	function resetAidant(): void {
+		aidantVisible.value = false
+		aidantIds.value = [] as string[]
+		aidantReason.value = ''
+		aidantWait.value = false
+	}
+
+	// 派生协办：主办行不办结（任务仍 DOING）⇒ 照征询撤回那路只重读详情/投影，不退页
+	function doAidant(): void {
+		if (submitting.value || aidantIds.value.length == 0) {
+			return
+		}
+		submitting.value = true
+		uni.showLoading({ title: '派生中……', mask: true })
+		const param = {
+			processTaskId: taskId.value,
+			actorIds: aidantIds.value
+		} as UTSJSONObject
+		if (aidantReason.value.length > 0) {
+			param['reason'] = aidantReason.value
+		}
+		// 布尔键必须用 .set()：UTSJSONObject 索引赋值对非字符串值会静默丢键（HANDOFF 实锤）
+		param.set('waitCompletion', aidantWait.value)
+		// operator 由后端从登录态注入（本仓 api/workflow.uts 既有口径，前端不传）
+		processTaskAidant(param).then((_r) => {
+			uni.hideLoading()
+			uni.showToast({ title: '已派生协办任务', icon: 'success' })
+			resetAidant()
+			uni.setStorageSync('pages:approval:approval:refresh', true)
+			loadAll()
+		}).catch((err) => {
+			uni.hideLoading()
+			uni.showToast({ title: $strUtil.anyToStr(err), icon: 'none' })
+		}).finally(() => {
+			submitting.value = false
+		})
+	}
 
 	function onMoreActions(): void {
 		uni.showActionSheet({
 			title: '更多操作',
-			itemList: ['退回上一步', '退回发起人', '跳转到指定节点'],
+			itemList: ['退回上一步', '退回发起人', '跳转到指定节点', '协办'],
 			success: (res: ShowActionSheetSuccess) => {
 				if (res.tapIndex == null) return
 				const idx = parseInt(res.tapIndex.toString())
@@ -859,6 +996,8 @@
 					doExecute(6)
 				} else if (idx == 2) {
 					onJumpNode()
+				} else if (idx == 3) {
+					onAidant()
 				}
 			}
 		})
@@ -887,8 +1026,8 @@
 				}
 			}
 			// 选人弹层已打开时补选项（用户列表异步晚于弹层）
-			// 只喂抄送/会签加签两源：addSign（后加签）用 candidatePage，被这里覆盖成 /sys/user/page 会串数据源
-			if (pickerVisible.value && (pickerSource.value == 'cc' || pickerSource.value == 'sign')) {
+			// 只喂抄送/会签加签/协办三源：addSign（后加签）用 candidatePage，被这里覆盖成 /sys/user/page 会串数据源
+			if (pickerVisible.value && (pickerSource.value == 'cc' || pickerSource.value == 'sign' || pickerSource.value == 'aidant')) {
 				pickerOptions.value = users.value
 			}
 		}).catch((_e) => { })
@@ -1017,6 +1156,15 @@
 			pickerOptions.value = candidates.value
 			pickerSelected.value = addSignIds.value
 			pickerMultiple.value = true
+		} else if (source == 'aidant') {
+			// 协办选人（issues/253）：数据源照抄送/会签加签取 /sys/user/page，多选（每人一行协办子任务）
+			if (users.value.length == 0) {
+				loadUsers()
+			}
+			pickerTitle.value = '选择协办人'
+			pickerOptions.value = users.value
+			pickerSelected.value = aidantIds.value
+			pickerMultiple.value = true
 		} else {
 			// 会签加签：多选（对齐 vben select-user ApiSelect multiple）
 			if (users.value.length == 0) {
@@ -1037,6 +1185,8 @@
 			addSignIds.value = vals
 		} else if (pickerSource.value == 'cc') {
 			ccIds.value = vals
+		} else if (pickerSource.value == 'aidant') {
+			aidantIds.value = vals
 		} else if (pickerSource.value == 'sign') {
 			if (vals.length == 0) {
 				return
@@ -1092,6 +1242,19 @@
 	}
 
 	.m-countersign-revoke {
+		margin-top: 16rpx;
+	}
+
+	/* 协办派生面板（issues/253）——顶层类，蒸汽模式仅简单选择器 */
+	.m-aidant-hint {
+		font-size: 24rpx;
+		color: #999999;
+		line-height: 34rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.m-aidant-actions {
+		flex-direction: row;
 		margin-top: 16rpx;
 	}
 
