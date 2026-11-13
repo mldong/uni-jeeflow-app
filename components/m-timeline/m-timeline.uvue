@@ -291,17 +291,19 @@
 	function aidantHistoryText(h: UTSJSONObject): string {
 		const round = $strUtil.anyToStr(h.get('round'))
 		const heads = round.length > 0 ? ('第' + round + '轮') : '协办'
-		// 清场那条（abandoned:true）动作与派生相反，同形渲染会读成"主办协办了两次"（与 vben aidantLine 同判据）
+		const to = targetsText(h.get('toActors'))
+		// 清场那条（abandoned:true）动作与派生相反，同形渲染会读成"主办协办了两次"（与 vben aidantLine 同判据）；
+		// 但被作废的仍是那一轮那几个人 ⇒ 人名照带，谁被清场要看得见
 		const abandoned = $strUtil.anyToStr(h.get('abandoned'))
 		if (abandoned == 'true' || abandoned == '1') {
-			return heads + '协办已作废（离开节点时未办结）'
+			return heads + '协办给' + (to.length > 0 ? to : '-') + '，已作废（离开节点时未办结）'
 		}
-		const to = targetsText(h.get('toActors'))
 		return heads + '协办给' + (to.length > 0 ? to : '-')
 	}
 
 	// 协办子行随主办离开节点被作废（taskType=1 且 taskState=99）：引擎不给这类行投 u_realName／submitType，
-	// 只剩节点名一行。owner 拍定保留该行不隐藏，补一句实话（三前端同位文案逐字一致）
+	// 且 operator 恒空（没人办过），只剩节点名一行。owner 拍定保留该行不隐藏，补一句实话
+	// （三前端同位文案逐字一致；被征询的人由上面那条账本行出证，approvalRecord 投影不投 actor 列表）
 	function aidantRowText(item: UTSJSONObject): string {
 		const tt = $strUtil.anyToStr(item.get('taskType'))
 		const st = $strUtil.anyToStr(item.get('taskState'))
