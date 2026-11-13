@@ -93,16 +93,36 @@
 		return (n != null && n.length > 0) ? n! : id
 	}
 
+	// 转办末跳文案里嵌的是 actor 雪花 ID（引擎按审计真相存 id）⇒ 展示层借姓名表折成人名，
+	// 解析不到原样保留 id，不吞信息（与 nameOf 同族）。UTS 不依赖 RegExp，手工扫连续数字串；
+	// 雪花形如 19 位数字，日期/时间/轮次等短数字串不会命中，避免误替换。
+	function replaceIdTokens(s: string): string {
+		let out = ''
+		let run = ''
+		for (let i = 0; i < s.length; i++) {
+			const ch = s.substring(i, i + 1)
+			if (ch >= '0' && ch <= '9') {
+				run += ch
+			} else {
+				out += (run.length >= 15 ? nameOf(run) : run)
+				run = ''
+				out += ch
+			}
+		}
+		out += (run.length >= 15 ? nameOf(run) : run)
+		return out
+	}
+
 	function commentText(item: UTSJSONObject): string {
 		const variable = item.getJSON('variable')
 		if (variable != null) {
 			const c = variable!.getString('tf_approvalComment')
-			if (c != null && c.length > 0) return c!
+			if (c != null && c.length > 0) return replaceIdTokens(c!)
 		}
 		const ext = item.getJSON('ext')
 		if (ext != null) {
 			const c2 = ext!.getString('tf_approvalComment')
-			if (c2 != null && c2.length > 0) return c2!
+			if (c2 != null && c2.length > 0) return replaceIdTokens(c2!)
 		}
 		return ''
 	}
